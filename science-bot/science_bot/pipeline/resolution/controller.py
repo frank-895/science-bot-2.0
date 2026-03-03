@@ -21,6 +21,7 @@ from science_bot.pipeline.resolution.planning import (
     BaseResolutionDecision,
     FamilyResolutionDecisionResponse,
     FamilyResolutionPlan,
+    MultiFileMergePlan,
     ResolutionScratchpad,
     build_resolved_plan,
     shortlist_candidate_files,
@@ -485,6 +486,7 @@ def _is_recoverable_finalize_issue(message: str) -> bool:
         "references unobserved column",
         "references unknown zip entr",
         "references ambiguous zip entr",
+        "requires exactly one of filename or merge_plan",
     )
     return any(pattern in message for pattern in recoverable_patterns)
 
@@ -534,7 +536,7 @@ def _normalize_plan_filenames(
 ) -> BaseModel:
     """Normalize archive-backed filenames against observed zip entries."""
     update: dict[str, object] = {}
-    if hasattr(plan, "filename"):
+    if hasattr(plan, "filename") and plan.filename is not None:
         filename = cast(str, plan.filename)
         update["filename"] = _normalize_observed_filename(
             scratchpad=scratchpad,
@@ -549,6 +551,36 @@ def _normalize_plan_filenames(
             )
             for label, filename in result_table_files.items()
         }
+    merge_plan = getattr(plan, "merge_plan", None)
+    if merge_plan is not None:
+        normalized_merge_plan = merge_plan.model_copy(
+            update={
+                "data_sources": [
+                    source.model_copy(
+                        update={
+                            "filename": _normalize_observed_filename(
+                                scratchpad=scratchpad,
+                                filename=source.filename,
+                            )
+                        }
+                    )
+                    for source in merge_plan.data_sources
+                ],
+                "join": (
+                    None
+                    if merge_plan.join is None
+                    else merge_plan.join.model_copy(
+                        update={
+                            "metadata_file": _normalize_observed_filename(
+                                scratchpad=scratchpad,
+                                filename=merge_plan.join.metadata_file,
+                            )
+                        }
+                    )
+                ),
+            }
+        )
+        update["merge_plan"] = normalized_merge_plan
     if not update:
         return plan
     return plan.model_copy(update=update)
@@ -599,8 +631,21 @@ def _validate_plan_columns(
     filename_to_columns = _observed_columns_by_filename(scratchpad)
     missing: dict[str, list[str]] = {}
 
+    merge_plan = getattr(plan, "merge_plan", None)
+
+    if merge_plan is not None:
+        _validate_merge_plan_columns(
+            scratchpad=scratchpad,
+            plan=plan,
+            merge_plan=merge_plan,
+            filename_to_columns=filename_to_columns,
+        )
+        return
+
     if hasattr(plan, "filename"):
         filename = cast(str, plan.filename)
+        if filename is None:
+            return
         required = _required_columns_for_plan(plan)
         missing_columns = [
             column
@@ -622,6 +667,60 @@ def _validate_plan_columns(
             ]
             if missing_columns:
                 missing[filename] = missing_columns
+
+    if not missing:
+        return
+
+    detail = ", ".join(
+        f"{filename}: {sorted(set(columns))}" for filename, columns in missing.items()
+    )
+    raise ResolutionValidationError(f"Finalize references unobserved columns. {detail}")
+
+
+def _validate_merge_plan_columns(
+    *,
+    scratchpad: ResolutionScratchpad,
+    plan: BaseModel,
+    merge_plan: MultiFileMergePlan,
+    filename_to_columns: dict[str, set[str]],
+) -> None:
+    """Validate observed columns for a merge-based resolved plan."""
+    missing: dict[str, list[str]] = {}
+    available_columns: set[str] = {merge_plan.output_sample_id_column}
+
+    for source in merge_plan.data_sources:
+        source_filename = source.filename
+        selected_columns = source.selected_columns
+        source_columns = filename_to_columns.get(source_filename, set())
+        source_missing = [
+            column for column in selected_columns if column not in source_columns
+        ]
+        if source_missing:
+            missing[source_filename] = source_missing
+        available_columns.update(source_columns)
+
+    join = merge_plan.join
+    if join is not None:
+        metadata_file = join.metadata_file
+        metadata_columns = _unique_strings(
+            [join.metadata_sample_id_column] + join.metadata_columns
+        )
+        observed_metadata_columns = filename_to_columns.get(metadata_file, set())
+        metadata_missing = [
+            column
+            for column in metadata_columns
+            if column not in observed_metadata_columns
+        ]
+        if metadata_missing:
+            missing[metadata_file] = metadata_missing
+        available_columns.update(observed_metadata_columns)
+
+    required = _required_columns_for_plan(plan)
+    unresolved_required = [
+        column for column in required if column not in available_columns
+    ]
+    if unresolved_required:
+        missing["merge_plan"] = unresolved_required
 
     if not missing:
         return

@@ -22,6 +22,7 @@ from science_bot.pipeline.execution.aggregate import IMPLEMENTED_AGGREGATE_OPERA
 from science_bot.pipeline.execution.differential_expression import (
     IMPLEMENTED_DIFFERENTIAL_EXPRESSION_EXECUTION_MODES,
     IMPLEMENTED_DIFFERENTIAL_EXPRESSION_OPERATIONS,
+    SUPPORTED_RAW_COUNT_OPERATIONS,
 )
 from science_bot.pipeline.execution.hypothesis_test import (
     IMPLEMENTED_HYPOTHESIS_TESTS,
@@ -405,7 +406,13 @@ def test_differential_expression_execution_modes_are_partially_implemented() -> 
         "raw_counts",
     }
     assert set(IMPLEMENTED_DIFFERENTIAL_EXPRESSION_EXECUTION_MODES) == {
-        "precomputed_results"
+        "precomputed_results",
+        "raw_counts",
+    }
+    assert set(SUPPORTED_RAW_COUNT_OPERATIONS) == {
+        "significant_gene_count",
+        "gene_log2_fold_change",
+        "significant_marker_count",
     }
 
 

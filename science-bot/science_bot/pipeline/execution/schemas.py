@@ -23,6 +23,7 @@ DifferentialExpressionExecutionMode: TypeAlias = Literal[
     "precomputed_results",
     "raw_counts",
 ]
+CountMatrixOrientation: TypeAlias = Literal["genes_by_samples", "samples_by_genes"]
 
 
 class ResolvedFilter(BaseModel):
@@ -200,6 +201,13 @@ class DifferentialExpressionExecutionInput(BaseModel):
     result_tables: dict[str, pd.DataFrame] = Field(default_factory=dict)
     count_matrix: pd.DataFrame | None = None
     sample_metadata: pd.DataFrame | None = None
+    sample_metadata_sample_id_column: str | None = None
+    design_factor_column: str | None = None
+    tested_level: str | None = None
+    reference_level: str | None = None
+    count_matrix_orientation: CountMatrixOrientation | None = None
+    count_matrix_gene_id_column: str | None = None
+    count_matrix_sample_id_column: str | None = None
     comparison_labels: list[str] = Field(default_factory=list)
     reference_label: str | None = None
     target_gene: str | None = None
@@ -232,6 +240,41 @@ class DifferentialExpressionExecutionInput(BaseModel):
             if self.count_matrix is None or self.sample_metadata is None:
                 raise ValueError(
                     "raw_counts mode requires count_matrix and sample_metadata."
+                )
+            if self.sample_metadata_sample_id_column is None:
+                raise ValueError(
+                    "raw_counts mode requires sample_metadata_sample_id_column."
+                )
+            if self.design_factor_column is None:
+                raise ValueError("raw_counts mode requires design_factor_column.")
+            if self.tested_level is None:
+                raise ValueError("raw_counts mode requires tested_level.")
+            if self.reference_level is None:
+                raise ValueError("raw_counts mode requires reference_level.")
+            if self.count_matrix_orientation is None:
+                raise ValueError("raw_counts mode requires count_matrix_orientation.")
+            if len(self.comparison_labels) != 1:
+                raise ValueError(
+                    "raw_counts mode requires exactly one comparison_label."
+                )
+            if self.operation not in {
+                "significant_gene_count",
+                "gene_log2_fold_change",
+                "significant_marker_count",
+            }:
+                raise ValueError(
+                    f"raw_counts mode does not support operation '{self.operation}'."
+                )
+            if self.count_matrix_orientation == "genes_by_samples":
+                if self.count_matrix_gene_id_column is None:
+                    raise ValueError(
+                        "genes_by_samples raw_counts requires "
+                        "count_matrix_gene_id_column."
+                    )
+            elif self.count_matrix_sample_id_column is None:
+                raise ValueError(
+                    "samples_by_genes raw_counts requires "
+                    "count_matrix_sample_id_column."
                 )
 
         if self.operation == "gene_log2_fold_change" and not self.target_gene:

@@ -70,6 +70,36 @@ class ResolvedFilterPlan(BaseModel):
     value: ResolvedFilterValue
 
 
+class MultiFileSourceEntry(BaseModel):
+    """One per-sample data source used to build a merged dataframe."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    sample_id: str
+    selected_columns: list[str] = Field(default_factory=list)
+
+
+class MetadataJoinPlan(BaseModel):
+    """Metadata join description for merged resolution plans."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metadata_file: str
+    metadata_sample_id_column: str
+    metadata_columns: list[str] = Field(default_factory=list)
+
+
+class MultiFileMergePlan(BaseModel):
+    """Internal plan for building one dataframe from multiple source files."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    data_sources: list[MultiFileSourceEntry] = Field(default_factory=list)
+    join: MetadataJoinPlan | None = None
+    output_sample_id_column: str = "sample_id"
+
+
 class CandidateFileSummary(BaseModel):
     """Compact file candidate kept in scratchpad state."""
 
@@ -241,6 +271,11 @@ _FAMILY_KEYWORDS: dict[QuestionFamily, tuple[str, ...]] = {
         "de",
         "marker",
         "gene",
+        "count",
+        "counts",
+        "metadata",
+        "sample",
+        "condition",
         "xlsx",
         "tsv",
         "zip",

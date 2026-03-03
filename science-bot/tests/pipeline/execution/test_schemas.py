@@ -3,6 +3,7 @@ import pytest
 from pydantic import ValidationError
 from science_bot.pipeline.execution.schemas import (
     AggregateExecutionInput,
+    DifferentialExpressionExecutionInput,
     ExecutionStageInput,
     HypothesisTestExecutionInput,
     ResolvedFilter,
@@ -212,6 +213,127 @@ def test_differential_expression_overlap_with_too_few_comparisons_fails() -> Non
                     "comparison_labels": ["comp"],
                 }
             }
+        )
+
+
+def test_raw_counts_requires_design_factor_column() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"gene": ["g1"], "s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            count_matrix_gene_id_column="gene",
+            comparison_labels=["A vs B"],
+        )
+
+
+def test_raw_counts_requires_sample_metadata_sample_id_column() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"gene": ["g1"], "s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            design_factor_column="condition",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            count_matrix_gene_id_column="gene",
+            comparison_labels=["A vs B"],
+        )
+
+
+def test_raw_counts_requires_tested_and_reference_levels() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"gene": ["g1"], "s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            design_factor_column="condition",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            count_matrix_gene_id_column="gene",
+            comparison_labels=["A vs B"],
+        )
+
+
+def test_raw_counts_genes_by_samples_requires_gene_id_column() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            design_factor_column="condition",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            comparison_labels=["A vs B"],
+        )
+
+
+def test_raw_counts_samples_by_genes_requires_sample_id_column() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"gene1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            design_factor_column="condition",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="samples_by_genes",
+            comparison_labels=["A vs B"],
+        )
+
+
+def test_raw_counts_requires_exactly_one_comparison_label() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="significant_gene_count",
+            count_matrix=pd.DataFrame({"gene": ["g1"], "s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            design_factor_column="condition",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            count_matrix_gene_id_column="gene",
+            comparison_labels=["A vs B", "C vs D"],
+        )
+
+
+def test_raw_counts_rejects_deferred_operation() -> None:
+    with pytest.raises(ValidationError):
+        DifferentialExpressionExecutionInput(
+            family="differential_expression",
+            mode="raw_counts",
+            operation="correction_ratio",
+            count_matrix=pd.DataFrame({"gene": ["g1"], "s1": [1]}),
+            sample_metadata=pd.DataFrame({"sample": ["s1"], "condition": ["A"]}),
+            sample_metadata_sample_id_column="sample",
+            design_factor_column="condition",
+            tested_level="A",
+            reference_level="B",
+            count_matrix_orientation="genes_by_samples",
+            count_matrix_gene_id_column="gene",
+            comparison_labels=["A vs B"],
         )
 
 

@@ -5,7 +5,10 @@ import openpyxl
 import pandas as pd
 import pytest
 from science_bot.pipeline.contracts import SupportedQuestionClassification
-from science_bot.pipeline.execution.schemas import AggregateExecutionInput
+from science_bot.pipeline.execution.schemas import (
+    AggregateExecutionInput,
+    VariantFilteringExecutionInput,
+)
 from science_bot.pipeline.resolution import controller
 from science_bot.pipeline.resolution.schemas import ResolutionStageInput
 from science_bot.pipeline.resolution.tools.schemas import (
@@ -138,6 +141,121 @@ def test_run_resolution_controller_finalizes(monkeypatch, tmp_path: Path):
         )
     )
     assert output.selected_files == ["data.csv"]
+    assert output.steps[-1].kind == "finalize"
+
+
+def test_run_resolution_controller_finalizes_merge_plan(monkeypatch, tmp_path: Path):
+    manifest = FullCapsuleManifest(
+        capsule_path=str(tmp_path),
+        files=[
+            AllFileInfo(
+                path="metadata.xlsx",
+                filename="metadata.xlsx",
+                extension=".xlsx",
+                size_bytes=1,
+                size_human="1 B",
+                category="excel",
+                is_supported_for_deeper_inspection=True,
+            ),
+            AllFileInfo(
+                path="sample_a.xlsx",
+                filename="sample_a.xlsx",
+                extension=".xlsx",
+                size_bytes=1,
+                size_human="1 B",
+                category="excel",
+                is_supported_for_deeper_inspection=True,
+            ),
+        ],
+        total_size_bytes=2,
+    )
+    monkeypatch.setattr(controller, "list_all_capsule_files", lambda _path: manifest)
+
+    class Decision:
+        action = "finalize"
+        reason = "done"
+        zip_filename = None
+        filename = None
+        query = None
+        column = None
+        columns = []
+        n = 10
+        random_sample = False
+        max_values = 50
+        max_matches = 50
+        use_merge = True
+        data_source_files = ["sample_a.xlsx"]
+        data_source_sample_ids = ["A"]
+        data_source_selected_columns = ["effect", "vaf"]
+        metadata_file = "metadata.xlsx"
+        metadata_sample_id_column = "Sample ID"
+        metadata_columns = ["Status"]
+        output_sample_id_column = "sample_id"
+        operation = "filtered_variant_count"
+        sample_column = "sample_id"
+        sample_value = None
+        gene_column = None
+        effect_column = "effect"
+        vaf_column = "vaf"
+        vaf_min = None
+        vaf_max = None
+        filters = []
+        return_format = "number"
+        decimal_places = None
+        round_to = None
+
+    async def fake_parse_structured(**_kwargs):
+        return Decision()
+
+    monkeypatch.setattr(controller, "parse_structured", fake_parse_structured)
+    monkeypatch.setattr(
+        controller,
+        "_observed_columns_by_filename",
+        lambda _scratchpad: {
+            "sample_a.xlsx": {"effect", "vaf"},
+            "metadata.xlsx": {"Sample ID", "Status"},
+        },
+    )
+    monkeypatch.setattr(
+        controller,
+        "assemble_payload",
+        lambda **_kwargs: (
+            VariantFilteringExecutionInput(
+                family="variant_filtering",
+                operation="filtered_variant_count",
+                data=pd.DataFrame(
+                    {"sample_id": ["A"], "effect": ["missense"], "vaf": [0.1]}
+                ),
+                sample_column="sample_id",
+                sample_value=None,
+                gene_column=None,
+                effect_column="effect",
+                vaf_column="vaf",
+                vaf_min=None,
+                vaf_max=None,
+                filters=[],
+                return_format="number",
+                decimal_places=None,
+                round_to=None,
+            ),
+            ["sample_a.xlsx", "metadata.xlsx"],
+            [],
+        ),
+    )
+
+    output = asyncio.run(
+        controller.run_resolution_controller(
+            ResolutionStageInput(
+                question="question",
+                classification=SupportedQuestionClassification(
+                    family="variant_filtering"
+                ),
+                capsule_path=tmp_path,
+            )
+        )
+    )
+
+    assert output.selected_files == ["sample_a.xlsx", "metadata.xlsx"]
     assert output.steps[-1].kind == "finalize"
 
 

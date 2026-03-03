@@ -42,9 +42,11 @@ Rules:
 - Use startup candidate metadata before spending a tool call.
 - Use only real filenames, real sheet names, and real column names already
   observed through tools.
+- If one metadata file defines cohorts or statuses and many similarly named
+  sample files hold the measurements, you may finalize with a merge plan instead
+  of a single filename.
 - If the question cannot be resolved safely within the available evidence,
   return fail.
-- For differential_expression, only produce mode="precomputed_results".
 - Avoid random sampling unless it is clearly required.
 """.strip()
 
@@ -59,6 +61,9 @@ You need:
 - return_format
 If these are already visible from the candidate metadata, known columns, and
 question wording, finalize now.
+If the question depends on one metadata workbook plus many per-sample files,
+identify the metadata file, the sample files, and the sample IDs, then finalize
+with a merge plan instead of repeating single-file inspection.
 """.strip(),
     "hypothesis_test": """
 You need:
@@ -85,15 +90,25 @@ finalize now.
 """.strip(),
     "differential_expression": """
 You need:
-- mode="precomputed_results"
-- at least one result table file
+- either a precomputed DE result table or a raw-count setup
 - operation
 - comparison labels when required
 - relevant gene, fold-change, and adjusted-p columns when required
 - thresholds when the question explicitly specifies them
-If those are already visible in workbook headers or known columns, finalize now.
-Do not keep exploring once the result-table mapping and required columns are
-known.
+- prefer mode="precomputed_results" when a suitable DE result table is clearly
+  available
+- otherwise use mode="raw_counts" only when you can identify:
+  - count_matrix_file
+  - sample_metadata_file
+  - metadata sample ID column
+  - metadata design factor column
+  - tested and reference levels from observed values
+  - count matrix orientation and its identifier column
+  - exactly one comparison label
+If those are already visible in workbook headers, known columns, and observed
+values, finalize now.
+Do not keep exploring once the minimum required fields for the chosen mode are
+known. Fail rather than guess.
 """.strip(),
     "variant_filtering": """
 You need:
@@ -105,6 +120,9 @@ You need:
 - return_format
 If these are already visible from the candidate metadata, known columns, and
 question wording, finalize now.
+If the question depends on one metadata workbook plus many per-sample files,
+identify the metadata file, the sample files, and the sample IDs, then finalize
+with a merge plan instead of repeating single-file inspection.
 """.strip(),
 }
 
