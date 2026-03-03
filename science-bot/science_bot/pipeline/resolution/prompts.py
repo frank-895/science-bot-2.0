@@ -45,6 +45,11 @@ Rules:
 - If one metadata file defines cohorts or statuses and many similarly named
   sample files hold the measurements, you may finalize with a merge plan instead
   of a single filename.
+- Use a merge plan only when you have two or more per-sample data files and can
+  pair each file with exactly one sample ID.
+- Do not use a merge plan for a single matrix plus metadata file. In that case,
+  keep a normal filename-based plan and use metadata only to reason about the
+  needed columns and filters.
 - If the question cannot be resolved safely within the available evidence,
   return fail.
 - Avoid random sampling unless it is clearly required.
@@ -64,6 +69,8 @@ question wording, finalize now.
 If the question depends on one metadata workbook plus many per-sample files,
 identify the metadata file, the sample files, and the sample IDs, then finalize
 with a merge plan instead of repeating single-file inspection.
+Use merge only when there are two or more per-sample files and you can provide
+aligned data_source_files and data_source_sample_ids lists.
 """.strip(),
     "hypothesis_test": """
 You need:
@@ -123,6 +130,8 @@ question wording, finalize now.
 If the question depends on one metadata workbook plus many per-sample files,
 identify the metadata file, the sample files, and the sample IDs, then finalize
 with a merge plan instead of repeating single-file inspection.
+Use merge only when there are two or more per-sample files and you can provide
+aligned data_source_files and data_source_sample_ids lists.
 """.strip(),
 }
 

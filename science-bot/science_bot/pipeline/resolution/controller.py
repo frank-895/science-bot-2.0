@@ -529,6 +529,7 @@ def _is_recoverable_finalize_issue(message: str) -> bool:
         "references unknown zip entr",
         "references ambiguous zip entr",
         "requires exactly one of filename or merge_plan",
+        "use_merge requires",
     )
     return any(pattern in message for pattern in recoverable_patterns)
 

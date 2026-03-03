@@ -82,3 +82,10 @@ def test_build_system_prompt_includes_regression_finalize_checklist():
     assert "covariate_columns" in prompt
     assert "return_field" in prompt
     assert "finalize now" in prompt.lower()
+
+
+def test_build_system_prompt_includes_merge_guardrails():
+    prompt = build_system_prompt("aggregate")
+
+    assert "two or more per-sample data files" in prompt
+    assert "Do not use a merge plan for a single matrix plus metadata file" in prompt

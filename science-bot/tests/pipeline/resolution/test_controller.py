@@ -259,6 +259,117 @@ def test_run_resolution_controller_finalizes_merge_plan(monkeypatch, tmp_path: P
     assert output.steps[-1].kind == "finalize"
 
 
+def test_run_resolution_controller_bounces_back_from_invalid_merge_finalize(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(
+        controller,
+        "list_all_capsule_files",
+        lambda _path: FullCapsuleManifest(
+            capsule_path=str(tmp_path),
+            files=[],
+            total_size_bytes=0,
+        ),
+    )
+
+    class InvalidMergeDecision:
+        action = "finalize"
+        reason = "done"
+        zip_filename = None
+        filename = None
+        query = None
+        column = None
+        columns = []
+        n = 10
+        random_sample = False
+        max_values = 50
+        max_matches = 50
+        use_merge = True
+        data_source_files = ["sample_a.csv"]
+        data_source_sample_ids = []
+        data_source_selected_columns = ["value"]
+        metadata_file = "metadata.csv"
+        metadata_sample_id_column = "sample_id"
+        metadata_columns = ["Status"]
+        output_sample_id_column = "sample_id"
+        operation = "count"
+        value_column = None
+        numerator_mask_column = None
+        denominator_mask_column = None
+        numerator_filters = []
+        denominator_filters = []
+        filters = []
+        return_format = "number"
+        decimal_places = None
+        round_to = None
+
+    class ValidDecision:
+        action = "finalize"
+        reason = "done"
+        zip_filename = None
+        filename = "data.csv"
+        query = None
+        column = None
+        columns = []
+        n = 10
+        random_sample = False
+        max_values = 50
+        max_matches = 50
+        operation = "count"
+        value_column = None
+        numerator_mask_column = None
+        denominator_mask_column = None
+        numerator_filters = []
+        denominator_filters = []
+        filters = []
+        return_format = "number"
+        decimal_places = None
+        round_to = None
+
+    decisions = [InvalidMergeDecision(), ValidDecision()]
+
+    async def fake_parse_structured(**_kwargs):
+        return decisions.pop(0)
+
+    monkeypatch.setattr(controller, "parse_structured", fake_parse_structured)
+    monkeypatch.setattr(
+        controller,
+        "assemble_payload",
+        lambda **_kwargs: (
+            AggregateExecutionInput(
+                family="aggregate",
+                operation="count",
+                data=pd.DataFrame({"value": [1]}),
+                value_column=None,
+                numerator_mask_column=None,
+                denominator_mask_column=None,
+                numerator_filters=[],
+                denominator_filters=[],
+                filters=[],
+                return_format="number",
+                decimal_places=None,
+                round_to=None,
+            ),
+            ["data.csv"],
+            [],
+        ),
+    )
+
+    output = asyncio.run(
+        controller.run_resolution_controller(
+            ResolutionStageInput(
+                question="question",
+                classification=SupportedQuestionClassification(family="aggregate"),
+                capsule_path=tmp_path,
+            )
+        )
+    )
+
+    assert output.selected_files == ["data.csv"]
+    assert "use_merge requires" in output.steps[-2].message
+
+
 def test_initial_scratchpad_enriches_excel_candidates(tmp_path: Path):
     workbook = openpyxl.Workbook()
     workbook.active.title = "Tumor vs Normal"
