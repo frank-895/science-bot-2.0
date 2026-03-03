@@ -5,13 +5,25 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
-from typing import IO
+from typing import IO, Literal
 
 import pandas as pd
 from pandas.io.parsers.readers import TextFileReader
 
 _TABULAR_EXTENSIONS = {".csv", ".tsv", ".tab", ".xlsx", ".xls"}
 _EXCEL_EXTENSIONS = {".xlsx", ".xls"}
+
+
+def _excel_engine(extension: str) -> Literal["xlrd", "openpyxl"]:
+    """Return the pandas Excel engine for a file extension.
+
+    Args:
+        extension: Lowercase file extension including the leading dot.
+
+    Returns:
+        Literal["xlrd", "openpyxl"]: Pandas engine name.
+    """
+    return "xlrd" if extension == ".xls" else "openpyxl"
 
 
 class ManagedChunkReader:
@@ -254,19 +266,18 @@ def read_header(ref: FileRef) -> list[str]:
         list[str]: Column names.
     """
     if ref.is_excel:
+        engine = _excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
             buf = BytesIO(data)
-            df = pd.read_excel(
-                buf, sheet_name=ref.sheet_name, nrows=0, engine="openpyxl"
-            )
+            df = pd.read_excel(buf, sheet_name=ref.sheet_name, nrows=0, engine=engine)
         else:
             df = pd.read_excel(
                 ref.file_path,
                 sheet_name=ref.sheet_name,
                 nrows=0,
-                engine="openpyxl",
+                engine=engine,
             )
         return list(df.columns)
 
@@ -284,7 +295,7 @@ def count_rows(ref: FileRef) -> int:
         int: Number of data rows.
     """
     if ref.is_excel:
-        # openpyxl read_only gives us sheet dimensions cheaply
+        engine = _excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
@@ -293,14 +304,14 @@ def count_rows(ref: FileRef) -> int:
                 buf,
                 sheet_name=ref.sheet_name,
                 usecols=[0],
-                engine="openpyxl",
+                engine=engine,
             )
         else:
             df = pd.read_excel(
                 ref.file_path,
                 sheet_name=ref.sheet_name,
                 usecols=[0],
-                engine="openpyxl",
+                engine=engine,
             )
         return len(df)
 
@@ -343,6 +354,7 @@ def read_tabular(
         pd.DataFrame | Iterator[pd.DataFrame]: Loaded data or chunk iterator.
     """
     if ref.is_excel:
+        engine = _excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
@@ -355,7 +367,7 @@ def read_tabular(
             sheet_name=ref.sheet_name,
             usecols=usecols,
             nrows=nrows,
-            engine="openpyxl",
+            engine=engine,
         )
 
     # CSV/TSV — detect leading comment rows

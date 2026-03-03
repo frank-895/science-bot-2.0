@@ -50,7 +50,7 @@ from science_bot.pipeline.resolution.tools import (
 )
 from science_bot.providers import parse_structured
 
-MAX_RESOLUTION_ITERATIONS = 8
+MAX_RESOLUTION_ITERATIONS = 12
 T = TypeVar("T")
 
 

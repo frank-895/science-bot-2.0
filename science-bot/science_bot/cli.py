@@ -532,7 +532,7 @@ async def run_benchmark(
                     row.ideal,
                     orchestrator_result.answer,
                 )
-                return BenchmarkRowResult(
+                result = BenchmarkRowResult(
                     question_id=row.question_id,
                     question=row.question,
                     capsule_path=capsule_path,
@@ -560,26 +560,26 @@ async def run_benchmark(
                         stage="cli",
                         question_id=row.question_id,
                         question=row.question,
-                        family=orchestrator_result.classification_family,
+                        family=result.classification_family,
                         payload={
-                            "status": orchestrator_result.status,
-                            "is_correct": orchestrator_result.is_correct,
-                            "answer": orchestrator_result.response,
+                            "status": result.status,
+                            "is_correct": result.is_correct,
+                            "answer": result.response,
                         },
                     )
                     row_trace_writer.write_summary(
                         BenchmarkRowTraceSummary(
                             question_id=row.question_id,
-                            status=orchestrator_result.status,
-                            classification_family=orchestrator_result.classification_family,
-                            resolution_iterations_used=orchestrator_result.resolution_iterations_used,
-                            selected_files=orchestrator_result.selected_files,
-                            answer=orchestrator_result.response,
-                            is_correct=orchestrator_result.is_correct,
-                            error=orchestrator_result.error,
+                            status=result.status,
+                            classification_family=result.classification_family,
+                            resolution_iterations_used=result.resolution_iterations_used,
+                            selected_files=result.selected_files,
+                            answer=result.response,
+                            is_correct=result.is_correct,
+                            error=result.error,
                         )
                     )
-                return orchestrator_result
+                return result
             except Exception as exc:
                 result = BenchmarkRowResult(
                     question_id=row.question_id,

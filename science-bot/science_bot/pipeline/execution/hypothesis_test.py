@@ -42,7 +42,10 @@ def run_hypothesis_test_execution(
     data = apply_resolved_filters(payload.data, payload.filters)
 
     if payload.test == "shapiro_wilk":
-        statistic, p_value = stats.shapiro(data[payload.value_column])
+        shapiro_data = data
+        if payload.group_column is not None and payload.group_a_value is not None:
+            shapiro_data = data.loc[data[payload.group_column] == payload.group_a_value]
+        statistic, p_value = stats.shapiro(shapiro_data[payload.value_column])
         return _build_output(
             payload,
             statistic=float(statistic),
