@@ -53,6 +53,24 @@ def test_get_file_schema_normalizes_duplicate_headers(tmp_path: Path):
     ]
 
 
+def test_get_file_schema_treats_text_xls_as_tabular(tmp_path: Path):
+    file_path = tmp_path / "clinical.xls"
+    file_path.write_text("sample_id\tGroup\r\ns1\tA\r\n", encoding="utf-8")
+
+    schema = get_file_schema(tmp_path, "clinical.xls")
+
+    assert [column.name for column in schema.columns] == ["sample_id", "Group"]
+
+
+def test_get_file_schema_strips_outer_quotes_and_whitespace(tmp_path: Path):
+    file_path = tmp_path / "quoted.csv"
+    file_path.write_text(' "AEDECOD" ,value\r\nfoo,1\r\n', encoding="utf-8")
+
+    schema = get_file_schema(tmp_path, "quoted.csv")
+
+    assert [column.name for column in schema.columns] == ["AEDECOD", "value"]
+
+
 def test_reader_retries_csv_with_python_engine(monkeypatch):
     calls = []
 

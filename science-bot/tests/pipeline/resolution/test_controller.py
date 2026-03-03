@@ -10,6 +10,8 @@ from science_bot.pipeline.execution.schemas import (
     VariantFilteringExecutionInput,
 )
 from science_bot.pipeline.resolution import controller
+from science_bot.pipeline.resolution.families import AggregateResolvedPlan
+from science_bot.pipeline.resolution.planning import ResolutionScratchpad
 from science_bot.pipeline.resolution.schemas import ResolutionStageInput
 from science_bot.pipeline.resolution.tools.schemas import (
     AllFileInfo,
@@ -67,6 +69,60 @@ def test_run_resolution_controller_detects_repeated_tool_call(
                     capsule_path=tmp_path,
                 )
             )
+        )
+
+
+def test_filename_with_zip_context_normalizes_legacy_zip_separator():
+    assert (
+        controller._filename_with_zip_context(
+            "bundle.zip::inner/data.tsv",
+            None,
+        )
+        == "bundle.zip/inner/data.tsv"
+    )
+
+
+def test_recoverable_finalize_issue_includes_missing_filename_and_fields():
+    assert controller._is_recoverable_finalize_issue(
+        "filename is required for this action."
+    )
+    assert controller._is_recoverable_finalize_issue(
+        "pearson_correlation requires value_column and second_value_column."
+    )
+    assert controller._is_recoverable_finalize_issue(
+        "t_test requires value_column and group_column."
+    )
+
+
+def test_validate_multi_source_aggregate_finalize_rejects_single_file_plan():
+    scratchpad = ResolutionScratchpad(
+        family="aggregate",
+        question=(
+            "How many patients have no missing data for vital status, gene "
+            "expression data, and methylation data?"
+        ),
+        selected_files=[
+            "clinical_patient_coad.xls",
+            "COAD__geneExp.xls",
+            "COAD__methylation_450__TSS200-TSS1500.xls",
+        ],
+    )
+
+    with pytest.raises(
+        controller.ResolutionValidationError,
+        match="multiple required data sources",
+    ):
+        controller._validate_multi_source_aggregate_finalize(
+            question=scratchpad.question,
+            scratchpad=scratchpad,
+            plan=AggregateResolvedPlan(
+                filename="clinical_patient_coad.xls",
+                operation="count",
+                filters=[],
+                numerator_filters=[],
+                denominator_filters=[],
+                return_format="number",
+            ),
         )
 
 

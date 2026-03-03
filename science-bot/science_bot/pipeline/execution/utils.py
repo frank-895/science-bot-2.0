@@ -57,6 +57,8 @@ def format_scalar_answer(
     Returns:
         str: Deterministic scalar formatting.
     """
+    if round_to == 0:
+        round_to = None
     if round_to is not None:
         value = round(value / round_to) * round_to
     if float(value).is_integer() and decimal_places is None:

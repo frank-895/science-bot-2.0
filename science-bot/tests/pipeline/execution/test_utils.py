@@ -98,3 +98,7 @@ def test_format_scalar_answer_rounding() -> None:
 
 def test_format_scalar_answer_round_to_nearest_thousand() -> None:
     assert format_scalar_answer(82442.3333333333, None, 1000) == "82000"
+
+
+def test_format_scalar_answer_ignores_zero_round_to() -> None:
+    assert format_scalar_answer(0.216, 3, 0) == "0.216"

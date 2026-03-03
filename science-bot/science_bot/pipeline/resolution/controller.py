@@ -12,6 +12,7 @@ from science_bot.pipeline.resolution.assembly import (
 )
 from science_bot.pipeline.resolution.families import (
     AggregateResolutionDecision,
+    AggregateResolvedPlan,
     DifferentialExpressionResolutionDecision,
     HypothesisTestResolutionDecision,
     RegressionResolutionDecision,
@@ -175,6 +176,11 @@ async def run_resolution_controller(
                 decision,
                 require_text=_require_text,
                 require_value=_require_value,
+            )
+            _validate_multi_source_aggregate_finalize(
+                question=stage_input.question,
+                scratchpad=scratchpad,
+                plan=plan,
             )
             plan = cast(
                 FamilyResolutionPlan,
@@ -498,6 +504,9 @@ def _filename_with_zip_context(
 ) -> str:
     """Return an extended filename including zip context when available."""
     resolved_filename = _require_text(filename, "filename")
+    if ".zip::" in resolved_filename:
+        zip_path, inner_path = resolved_filename.split(".zip::", 1)
+        resolved_filename = f"{zip_path}.zip/{inner_path}"
     if zip_filename is None or ".zip/" in resolved_filename:
         return resolved_filename
     return f"{_require_text(zip_filename, 'zip_filename')}/{resolved_filename}"
@@ -520,11 +529,15 @@ def _is_recoverable_finalize_issue(message: str) -> bool:
     recoverable_patterns = (
         "require value_column",
         "requires group_column",
+        "requires value_column and second_value_column",
+        "requires value_column and group_column",
         "requires group_a_value and group_b_value",
         "is required for finalize",
+        "is required for this action",
         "requires result_table_files",
         "requires at least two comparison_labels",
         "requires at least two correction_methods",
+        "multiple required data sources",
         "references unobserved column",
         "references unknown zip entr",
         "references ambiguous zip entr",
@@ -575,6 +588,51 @@ def _normalize_and_validate_plan(
     )
     _validate_plan_columns(scratchpad=scratchpad, plan=normalized_plan)
     return normalized_plan
+
+
+def _validate_multi_source_aggregate_finalize(
+    *,
+    question: str,
+    scratchpad: ResolutionScratchpad,
+    plan: BaseModel,
+) -> None:
+    """Reject single-file aggregate finalize plans for explicit multi-source gaps."""
+    if not isinstance(plan, AggregateResolvedPlan):
+        return
+    if (
+        plan.merge_plan is not None
+        or plan.filename is None
+        or plan.operation != "count"
+    ):
+        return
+
+    question_lower = question.lower()
+    if "no missing data" not in question_lower:
+        return
+
+    inspected_files = {filename.lower() for filename in scratchpad.selected_files}
+    if len(inspected_files) < 2:
+        return
+
+    modality_hits = 0
+    modality_groups = (
+        ("vital", "clinical", "patient"),
+        ("gene expression", "geneexp", "expression"),
+        ("methylation", "methyl"),
+    )
+    for keywords in modality_groups:
+        if any(keyword in question_lower for keyword in keywords) or any(
+            keyword in filename for filename in inspected_files for keyword in keywords
+        ):
+            modality_hits += 1
+
+    if modality_hits < 2:
+        return
+
+    raise ResolutionValidationError(
+        "Aggregate question references multiple required data sources; single-file "
+        "finalize is incomplete."
+    )
 
 
 def _normalize_plan_filenames(

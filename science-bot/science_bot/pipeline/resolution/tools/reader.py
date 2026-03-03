@@ -2,6 +2,7 @@
 
 import csv
 import gzip
+import string
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from pandas.io.parsers.readers import TextFileReader
 TABULAR_EXTENSIONS = {".csv", ".tsv", ".tab", ".xlsx", ".xls"}
 EXCEL_EXTENSIONS = {".xlsx", ".xls"}
 GZIP_MAGIC = b"\x1f\x8b"
+OLE2_MAGIC = b"\xd0\xcf\x11\xe0"
+TEXT_BYTE_SAMPLE_SIZE = 2048
 
 
 def excel_engine(extension: str) -> Literal["xlrd", "openpyxl"]:
@@ -231,7 +234,7 @@ def read_header(ref: FileRef) -> list[str]:
     Returns:
         list[str]: Column names.
     """
-    if ref.is_excel:
+    if ref.is_excel and not _looks_like_text_tabular(ref):
         dataframe = _read_excel(ref, nrows=0)
         return list(dataframe.columns)
 
@@ -249,7 +252,7 @@ def count_rows(ref: FileRef) -> int:
     Returns:
         int: Number of data rows.
     """
-    if ref.is_excel:
+    if ref.is_excel and not _looks_like_text_tabular(ref):
         df = _read_excel(ref, nrows=None)
         if df.empty:
             return 0
@@ -289,7 +292,7 @@ def read_tabular(
     Returns:
         pd.DataFrame | Iterator[pd.DataFrame]: Loaded dataframe or chunk iterator.
     """
-    if ref.is_excel:
+    if ref.is_excel and not _looks_like_text_tabular(ref):
         engine = excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
@@ -305,6 +308,17 @@ def read_tabular(
             engine=engine,
         )
 
+    return _read_text_tabular(ref, usecols=usecols, nrows=nrows, chunksize=chunksize)
+
+
+def _read_text_tabular(
+    ref: FileRef,
+    *,
+    usecols: list[str] | None = None,
+    nrows: int | None = None,
+    chunksize: int | None = None,
+) -> pd.DataFrame | Iterator[pd.DataFrame]:
+    """Read CSV/TSV-like text data from direct files or zip entries."""
     skip, header_line = scan_csv_preamble(ref)
     separator = _sniff_separator(header_line, ref.separator)
     header_cols = _normalize_headers(header_line.split(separator))
@@ -467,7 +481,9 @@ def _normalize_headers(headers: list[str] | list[object]) -> list[str]:
     counts: dict[str, int] = {}
     normalized: list[str] = []
     for raw in headers:
-        base = str(raw)
+        base = str(raw).replace("\r", "").strip()
+        if len(base) >= 2 and base[0] == base[-1] and base[0] in {'"', "'"}:
+            base = base[1:-1].strip()
         counts[base] = counts.get(base, 0) + 1
         if counts[base] == 1:
             normalized.append(base)
@@ -483,6 +499,41 @@ def _wrap_gzip_stream(stream: IO[bytes]) -> IO[bytes]:
     if start == GZIP_MAGIC:
         return cast(IO[bytes], gzip.GzipFile(fileobj=stream))
     return stream
+
+
+def _looks_like_text_tabular(ref: FileRef) -> bool:
+    """Return whether an Excel-suffixed file appears to be plain delimited text."""
+    if ref.extension != ".xls":
+        return False
+    sample = _peek_file_bytes(ref, TEXT_BYTE_SAMPLE_SIZE)
+    if not sample or sample.startswith(OLE2_MAGIC):
+        return False
+    try:
+        decoded = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            decoded = sample.decode("latin-1")
+        except UnicodeDecodeError:
+            return False
+    if not decoded:
+        return False
+    printable = sum(
+        1 for char in decoded if char in string.printable or char in "\n\r\t"
+    )
+    if printable / max(len(decoded), 1) < 0.9:
+        return False
+    first_line = decoded.splitlines()[0] if decoded.splitlines() else decoded
+    return any(delimiter in first_line for delimiter in ("\t", ",", ";", "|"))
+
+
+def _peek_file_bytes(ref: FileRef, size: int) -> bytes:
+    """Return the first bytes from a direct file or zip entry."""
+    if ref.zip_path is not None and ref.inner_path is not None:
+        with zipfile.ZipFile(ref.zip_path) as archive:
+            with archive.open(ref.inner_path) as handle:
+                return handle.read(size)
+    with open(ref.file_path, "rb") as handle:
+        return handle.read(size)
 
 
 def _sniff_separator(header_line: str, default: str) -> str:
