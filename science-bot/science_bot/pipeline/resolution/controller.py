@@ -42,9 +42,11 @@ from science_bot.pipeline.resolution.schemas import (
 )
 from science_bot.pipeline.resolution.tools import (
     find_files_with_column,
+    format_notebook_summary,
     get_column_stats,
     get_column_values,
     get_file_schema,
+    get_notebook_outputs,
     get_row_sample,
     list_all_capsule_files,
     list_excel_sheets,
@@ -79,10 +81,15 @@ def _initial_scratchpad(stage_input: ResolutionStageInput) -> ResolutionScratchp
         stage_input.classification.family,
         capsule_path=stage_input.capsule_path,
     )
+    # Pre-populate notebook outputs so the LLM sees pre-computed results on
+    # iteration 1 without burning a tool-call iteration.
+    notebook_result = get_notebook_outputs(stage_input.capsule_path)
+    notebook_summary = format_notebook_summary(notebook_result)
     return ResolutionScratchpad(
         family=stage_input.classification.family,
         question=stage_input.question,
         candidate_files=candidates,
+        notebook_summary=notebook_summary,
     )
 
 

@@ -7,6 +7,10 @@ from science_bot.pipeline.resolution.tools.discovery import (
     search_filenames,
 )
 from science_bot.pipeline.resolution.tools.excel import list_excel_sheets
+from science_bot.pipeline.resolution.tools.notebook import (
+    format_notebook_summary,
+    get_notebook_outputs,
+)
 from science_bot.pipeline.resolution.tools.schemas import (
     AllFileInfo,
     CapsuleManifest,
@@ -21,6 +25,8 @@ from science_bot.pipeline.resolution.tools.schemas import (
     FilenameSearchResult,
     FileSchema,
     FullCapsuleManifest,
+    NotebookCellOutput,
+    NotebookOutputs,
     RowSample,
     ZipEntry,
     ZipManifest,
@@ -73,6 +79,9 @@ __all__ = [
     "get_row_sample",
     # Sequence inspection
     "summarize_fasta_file",
+    # Notebook inspection
+    "get_notebook_outputs",
+    "format_notebook_summary",
     # Data assembly
     "load_dataframe",
     # Schemas
@@ -89,6 +98,8 @@ __all__ = [
     "FilenameSearchResult",
     "FileSchema",
     "FullCapsuleManifest",
+    "NotebookCellOutput",
+    "NotebookOutputs",
     "RowSample",
     "ZipEntry",
     "ZipManifest",

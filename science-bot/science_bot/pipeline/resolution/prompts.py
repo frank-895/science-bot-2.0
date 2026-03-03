@@ -10,6 +10,16 @@ RESOLUTION_SYSTEM_PROMPT = """
 You are resolving a life-science analysis question into a deterministic execution
 plan for one supported family.
 
+Notebook outputs:
+- Each capsule may contain a Jupyter notebook executed by the original study
+  authors. The notebook outputs are shown to you at the top of each prompt
+  under "Notebook pre-computed outputs".
+- READ THESE CAREFULLY FIRST. They often contain the exact numerical answer,
+  the correct column names, filenames, and statistical methods used.
+- If a pre-computed result already answers the question, finalize immediately
+  using the file and columns visible in the notebook outputs — do NOT explore
+  further.
+
 Rules:
 - You must choose exactly one next action.
 - Allowed actions are:
@@ -41,7 +51,7 @@ Rules:
   reformulations.
 - Use startup candidate metadata before spending a tool call.
 - Use only real filenames, real sheet names, and real column names already
-  observed through tools.
+  observed through tools or notebook outputs.
 - If one metadata file defines cohorts or statuses and many similarly named
   sample files hold the measurements, you may finalize with a merge plan instead
   of a single filename.
@@ -179,6 +189,14 @@ def build_resolution_prompt(
     if not sheet_lines:
         sheet_lines.append("- none")
 
+    notebook_section: list[str] = []
+    if scratchpad.notebook_summary:
+        notebook_section = [
+            "Notebook pre-computed outputs (read first — may contain the answer):",
+            scratchpad.notebook_summary,
+            "",
+        ]
+
     return "\n".join(
         [
             f"Question: {question}",
@@ -186,6 +204,7 @@ def build_resolution_prompt(
             f"Iteration: {scratchpad.iterations_used + 1}",
             f"Iterations remaining after this turn: {iterations_remaining - 1}",
             "",
+            *notebook_section,
             "Candidate files:",
             *candidate_lines,
             "",

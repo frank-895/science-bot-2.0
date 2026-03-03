@@ -205,3 +205,24 @@ class FastaSummary(BaseModel):
     gap_fraction: float | None
     alphabet_hint: Literal["dna", "protein", "unknown"]
     truncated: bool = False
+
+
+class NotebookCellOutput(BaseModel):
+    """A single executed code-cell output from a Jupyter notebook."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cell_index: int
+    source_preview: str
+    output_text: str
+
+
+class NotebookOutputs(BaseModel):
+    """Executed outputs collected from a capsule's Jupyter notebook."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_found: bool
+    total_cells_with_output: int
+    outputs: list[NotebookCellOutput]
+    truncated: bool

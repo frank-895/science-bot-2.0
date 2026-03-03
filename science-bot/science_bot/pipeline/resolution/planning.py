@@ -173,6 +173,7 @@ class ResolutionScratchpad(BaseModel):
     last_tool_name: str | None = None
     last_tool_summary: str | None = None
     iterations_used: int = 0
+    notebook_summary: str | None = None
 
 
 class BaseResolutionDecision(BaseModel):
