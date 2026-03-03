@@ -13,7 +13,10 @@ from science_bot.pipeline.resolution.tools.schemas import (
     ColumnStats,
     ColumnValues,
     ColumnValueSearchResult,
+    FastaSummary,
+    FilenameSearchResult,
     FileSchema,
+    FullCapsuleManifest,
     RowSample,
     ZipManifest,
 )
@@ -37,7 +40,9 @@ ResolvedFilterValue: TypeAlias = (
     str | int | float | bool | list[str] | list[int] | list[float]
 )
 ResolutionAction: TypeAlias = Literal[
+    "use_list_all_capsule_files",
     "use_list_zip_contents",
+    "use_search_filenames",
     "use_list_excel_sheets",
     "use_find_files_with_column",
     "use_get_file_schema",
@@ -46,6 +51,7 @@ ResolutionAction: TypeAlias = Literal[
     "use_get_column_stats",
     "use_search_column_for_value",
     "use_get_row_sample",
+    "use_summarize_fasta_file",
     "finalize",
     "fail",
 ]
@@ -66,6 +72,7 @@ class CandidateFileSummary(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    path: str | None = None
     filename: str
     file_type: str
     size_human: str
@@ -232,7 +239,7 @@ _FAMILY_KEYWORDS: dict[QuestionFamily, tuple[str, ...]] = {
 
 
 def shortlist_candidate_files(
-    manifest: CapsuleManifest,
+    manifest: CapsuleManifest | FullCapsuleManifest,
     family: QuestionFamily,
 ) -> list[CandidateFileSummary]:
     """Reduce a manifest to a family-aware shortlist."""
@@ -241,23 +248,31 @@ def shortlist_candidate_files(
     for info in manifest.files:
         score = 0
         filename_lower = info.filename.lower()
+        path_lower = getattr(info, "path", info.filename).lower()
         for keyword in keywords:
-            if keyword in filename_lower:
+            if keyword in filename_lower or keyword in path_lower:
                 score += 5
-        if info.file_type == "zip":
+        file_type = getattr(info, "file_type", getattr(info, "category", "other"))
+        row_count = getattr(info, "row_count", None)
+        column_count = getattr(info, "column_count", None)
+        is_wide = getattr(info, "is_wide", None)
+        size_human = getattr(info, "size_human", "unknown")
+        path = getattr(info, "path", None)
+        if file_type == "zip":
             score += 2 if family == "differential_expression" else 0
-        if info.file_type == "excel":
+        if file_type == "excel":
             score += 3 if family == "differential_expression" else 1
-        if info.is_wide:
+        if is_wide:
             score -= 1
         candidates.append(
             CandidateFileSummary(
+                path=path,
                 filename=info.filename,
-                file_type=info.file_type,
-                size_human=info.size_human,
-                row_count=info.row_count,
-                column_count=info.column_count,
-                is_wide=info.is_wide,
+                file_type=file_type,
+                size_human=size_human,
+                row_count=row_count,
+                column_count=column_count,
+                is_wide=is_wide,
                 relevance_score=score,
             )
         )
@@ -334,6 +349,18 @@ def summarize_finalize(
 
 def tool_result_message(tool_name: str, result: object) -> tuple[str, bool]:
     """Create a compact human-readable summary for a tool result."""
+    if tool_name == "list_all_capsule_files" and isinstance(
+        result, FullCapsuleManifest
+    ):
+        shown = [file_info.path for file_info in result.files[:MAX_VALUES]]
+        truncated = len(result.files) > MAX_VALUES
+        if not shown:
+            return ("Capsule contains no files.", False)
+        return (
+            f"Discovered {len(result.files)} files across the capsule: {shown}",
+            truncated,
+        )
+
     if tool_name == "list_zip_contents" and isinstance(result, ZipManifest):
         entries = [entry.inner_path for entry in result.entries if entry.is_readable]
         truncated = len(entries) > MAX_ZIP_ENTRIES
@@ -383,6 +410,16 @@ def tool_result_message(tool_name: str, result: object) -> tuple[str, bool]:
         truncated = len(search_results) > MAX_VALUES
         return (f"Files with matching columns: {filenames}", truncated)
 
+    if isinstance(result, list) and (
+        not result or isinstance(result[0], FilenameSearchResult)
+    ):
+        filename_results = cast(list[FilenameSearchResult], result)
+        if not filename_results:
+            return ("No matching filenames were found.", False)
+        shown = [entry.path for entry in filename_results[:MAX_VALUES]]
+        truncated = len(filename_results) > MAX_VALUES
+        return (f"Matching filenames: {shown}", truncated)
+
     if isinstance(result, ColumnValues):
         values = result.values[:MAX_VALUES]
         return (
@@ -423,6 +460,13 @@ def tool_result_message(tool_name: str, result: object) -> tuple[str, bool]:
             truncated,
         )
 
+    if isinstance(result, FastaSummary):
+        return (
+            f"FASTA summary for {result.filename}: sequences={result.sequence_count}, "
+            f"mean_length={result.mean_length}, gap_fraction={result.gap_fraction}",
+            False,
+        )
+
     return (f"Completed {tool_name}.", False)
 
 
@@ -444,6 +488,11 @@ def update_scratchpad_from_tool_result(
         ]
         if result.filename not in scratchpad.selected_files:
             scratchpad.selected_files.append(result.filename)
+    elif isinstance(result, FullCapsuleManifest):
+        scratchpad.candidate_files = shortlist_candidate_files(
+            result,
+            scratchpad.family,
+        )
     elif isinstance(result, ColumnSearchResult):
         if result.total_matches == 0:
             _record_failed_search(
@@ -477,6 +526,20 @@ def update_scratchpad_from_tool_result(
             for entry in search_results[:MAX_VALUES]:
                 if entry.filename not in scratchpad.selected_files:
                     scratchpad.selected_files.append(entry.filename)
+    elif isinstance(result, list) and (
+        not result or isinstance(result[0], FilenameSearchResult)
+    ):
+        filename_results = cast(list[FilenameSearchResult], result)
+        if not filename_results:
+            _record_failed_search(
+                scratchpad=scratchpad,
+                tool_name=tool_name,
+                query=cast(str | None, arguments.get("query")),
+            )
+        else:
+            for entry in filename_results[:MAX_VALUES]:
+                if entry.path not in scratchpad.selected_files:
+                    scratchpad.selected_files.append(entry.path)
     elif isinstance(result, ColumnValues):
         if result.filename not in scratchpad.selected_files:
             scratchpad.selected_files.append(result.filename)
@@ -504,6 +567,9 @@ def update_scratchpad_from_tool_result(
         elif result.filename not in scratchpad.selected_files:
             scratchpad.selected_files.append(result.filename)
     elif isinstance(result, RowSample):
+        if result.filename not in scratchpad.selected_files:
+            scratchpad.selected_files.append(result.filename)
+    elif isinstance(result, FastaSummary):
         if result.filename not in scratchpad.selected_files:
             scratchpad.selected_files.append(result.filename)
     elif isinstance(result, ZipManifest):

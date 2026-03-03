@@ -7,7 +7,7 @@ from science_bot.pipeline.contracts import SupportedQuestionClassification
 from science_bot.pipeline.execution.schemas import AggregateExecutionInput
 from science_bot.pipeline.resolution import controller
 from science_bot.pipeline.resolution.schemas import ResolutionStageInput
-from science_bot.pipeline.resolution.tools.schemas import CapsuleManifest
+from science_bot.pipeline.resolution.tools.schemas import FullCapsuleManifest
 
 
 def test_run_resolution_controller_detects_repeated_tool_call(
@@ -16,8 +16,8 @@ def test_run_resolution_controller_detects_repeated_tool_call(
 ):
     monkeypatch.setattr(
         controller,
-        "list_capsule_files",
-        lambda _path: CapsuleManifest(
+        "list_all_capsule_files",
+        lambda _path: FullCapsuleManifest(
             capsule_path=str(tmp_path),
             files=[],
             total_size_bytes=0,
@@ -64,8 +64,8 @@ def test_run_resolution_controller_detects_repeated_tool_call(
 def test_run_resolution_controller_finalizes(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         controller,
-        "list_capsule_files",
-        lambda _path: CapsuleManifest(
+        "list_all_capsule_files",
+        lambda _path: FullCapsuleManifest(
             capsule_path=str(tmp_path),
             files=[],
             total_size_bytes=0,

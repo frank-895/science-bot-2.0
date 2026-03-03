@@ -4,6 +4,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+FileCategory = Literal[
+    "tabular",
+    "excel",
+    "zip",
+    "sequence",
+    "notebook",
+    "json",
+    "text",
+    "other",
+]
+
 
 class FileInfo(BaseModel):
     """Summary information about a single capsule file."""
@@ -19,6 +30,20 @@ class FileInfo(BaseModel):
     file_type: Literal["csv", "tsv", "excel", "zip"]
 
 
+class AllFileInfo(BaseModel):
+    """Summary information about any file discovered in a capsule."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    filename: str
+    extension: str
+    size_bytes: int
+    size_human: str
+    category: FileCategory
+    is_supported_for_deeper_inspection: bool
+
+
 class CapsuleManifest(BaseModel):
     """Directory listing for a capsule."""
 
@@ -29,6 +54,16 @@ class CapsuleManifest(BaseModel):
     total_size_bytes: int
 
 
+class FullCapsuleManifest(BaseModel):
+    """Recursive file listing for a capsule."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capsule_path: str
+    files: list[AllFileInfo]
+    total_size_bytes: int
+
+
 class ZipEntry(BaseModel):
     """A single entry within a zip archive."""
 
@@ -36,7 +71,7 @@ class ZipEntry(BaseModel):
 
     inner_path: str
     size_bytes: int
-    file_type: Literal["csv", "tsv", "excel", "json", "other"]
+    file_type: FileCategory | Literal["csv", "tsv"]
     is_readable: bool
 
 
@@ -139,3 +174,34 @@ class RowSample(BaseModel):
     total_rows_in_file: int
     sample_size: int
     sampled_randomly: bool
+
+
+class FilenameSearchResult(BaseModel):
+    """Filename or path search result for one capsule file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    path: str
+    filename: str
+    category: FileCategory
+    size_bytes: int
+    matched_on: Literal["filename", "path"]
+    matched_texts: list[str]
+
+
+class FastaSummary(BaseModel):
+    """Compact summary statistics for a FASTA-like file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    sequence_count: int
+    min_length: int | None
+    max_length: int | None
+    mean_length: float | None
+    total_characters: int
+    gap_count: int
+    gap_fraction: float | None
+    alphabet_hint: Literal["dna", "protein", "unknown"]
+    truncated: bool = False

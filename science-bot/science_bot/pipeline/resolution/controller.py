@@ -42,11 +42,13 @@ from science_bot.pipeline.resolution.tools import (
     get_column_values,
     get_file_schema,
     get_row_sample,
-    list_capsule_files,
+    list_all_capsule_files,
     list_excel_sheets,
     list_zip_contents,
     search_column_for_value,
     search_columns,
+    search_filenames,
+    summarize_fasta_file,
 )
 from science_bot.providers import parse_structured
 
@@ -67,7 +69,7 @@ class ResolutionValidationError(ResolutionError):
 
 
 def _initial_scratchpad(stage_input: ResolutionStageInput) -> ResolutionScratchpad:
-    manifest = list_capsule_files(stage_input.capsule_path)
+    manifest = list_all_capsule_files(stage_input.capsule_path)
     candidates = shortlist_candidate_files(manifest, stage_input.classification.family)
     return ResolutionScratchpad(
         family=stage_input.classification.family,
@@ -231,10 +233,17 @@ def _execute_tool(
 ) -> object:
     """Execute one allowed inspection tool."""
     try:
+        if tool_name == "list_all_capsule_files":
+            return list_all_capsule_files(capsule_path)
         if tool_name == "list_zip_contents":
             return list_zip_contents(
                 capsule_path,
                 zip_filename=_expect_str(arguments, "zip_filename"),
+            )
+        if tool_name == "search_filenames":
+            return search_filenames(
+                capsule_path,
+                query=_expect_str(arguments, "query"),
             )
         if tool_name == "list_excel_sheets":
             return list_excel_sheets(
@@ -286,6 +295,11 @@ def _execute_tool(
                 n=_expect_int(arguments, "n", default=10),
                 random_sample=_expect_bool(arguments, "random_sample", default=False),
             )
+        if tool_name == "summarize_fasta_file":
+            return summarize_fasta_file(
+                capsule_path,
+                filename=_expect_str(arguments, "filename"),
+            )
         raise ResolutionValidationError(f"Unsupported tool requested: {tool_name}")
     except TypeError as exc:
         raise ResolutionValidationError(
@@ -332,10 +346,17 @@ def _decision_to_tool_call(
     decision: BaseResolutionDecision,
 ) -> tuple[str, dict[str, object]]:
     """Convert a flat use-tool decision into a tool call tuple."""
+    if decision.action == "use_list_all_capsule_files":
+        return ("list_all_capsule_files", {})
     if decision.action == "use_list_zip_contents":
         return (
             "list_zip_contents",
             {"zip_filename": _require_text(decision.zip_filename, "zip_filename")},
+        )
+    if decision.action == "use_search_filenames":
+        return (
+            "search_filenames",
+            {"query": _require_text(decision.query, "query")},
         )
     if decision.action == "use_list_excel_sheets":
         return (
@@ -396,6 +417,11 @@ def _decision_to_tool_call(
                 "n": decision.n,
                 "random_sample": decision.random_sample,
             },
+        )
+    if decision.action == "use_summarize_fasta_file":
+        return (
+            "summarize_fasta_file",
+            {"filename": _require_text(decision.filename, "filename")},
         )
     raise ResolutionValidationError(f"Unsupported decision action: {decision.action}")
 

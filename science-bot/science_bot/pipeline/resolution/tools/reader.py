@@ -1,4 +1,4 @@
-"""Internal file-reference and reader abstractions for capsule tools."""
+"""Shared filename parsing and tabular reader helpers for resolution tools."""
 
 import zipfile
 from collections.abc import Iterator
@@ -10,11 +10,11 @@ from typing import IO, Literal
 import pandas as pd
 from pandas.io.parsers.readers import TextFileReader
 
-_TABULAR_EXTENSIONS = {".csv", ".tsv", ".tab", ".xlsx", ".xls"}
-_EXCEL_EXTENSIONS = {".xlsx", ".xls"}
+TABULAR_EXTENSIONS = {".csv", ".tsv", ".tab", ".xlsx", ".xls"}
+EXCEL_EXTENSIONS = {".xlsx", ".xls"}
 
 
-def _excel_engine(extension: str) -> Literal["xlrd", "openpyxl"]:
+def excel_engine(extension: str) -> Literal["xlrd", "openpyxl"]:
     """Return the pandas Excel engine for a file extension.
 
     Args:
@@ -86,14 +86,18 @@ class FileRef:
     """Resolved reference to a file, optionally inside a zip archive."""
 
     capsule_path: Path
-    file_path: Path  # absolute path on disk (the zip itself, or the direct file)
-    zip_path: Path | None = None  # set when file is inside a zip
-    inner_path: str | None = None  # path within the zip
-    sheet_name: str | int = field(default=0)  # for Excel; ignored otherwise
+    file_path: Path
+    zip_path: Path | None = None
+    inner_path: str | None = None
+    sheet_name: str | int = field(default=0)
 
     @property
     def extension(self) -> str:
-        """Return the lowercase extension of the logical file."""
+        """Return the lowercase extension of the logical file.
+
+        Returns:
+            str: Lowercase file extension.
+        """
         if self.inner_path is not None:
             return Path(self.inner_path.split("::")[0]).suffix.lower()
         raw = str(self.file_path)
@@ -103,23 +107,25 @@ class FileRef:
 
     @property
     def is_excel(self) -> bool:
-        return self.extension in _EXCEL_EXTENSIONS
+        """Return whether the logical file is Excel-like.
+
+        Returns:
+            bool: True when the file extension is an Excel extension.
+        """
+        return self.extension in EXCEL_EXTENSIONS
 
     @property
     def separator(self) -> str:
+        """Return the CSV/TSV separator for a logical file.
+
+        Returns:
+            str: Tab for TSV/TAB files, comma otherwise.
+        """
         return "\t" if self.extension in {".tsv", ".tab"} else ","
 
 
-def parse_filename(capsule_path: Path, filename: str) -> "FileRef":
-    """Parse an extended filename into a FileRef.
-
-    Supported syntax:
-        "data.csv"                         – top-level CSV
-        "data.tsv"                         – top-level TSV
-        "results.xlsx"                     – Excel, first sheet
-        "results.xlsx::Sheet2"             – Excel, named sheet
-        "archive.zip/full_table.tsv"       – TSV inside zip
-        "archive.zip/results.xlsx::Sheet1" – Excel inside zip, named sheet
+def parse_filename(capsule_path: Path, filename: str) -> FileRef:
+    """Parse an extended filename into a resolved file reference.
 
     Args:
         capsule_path: Absolute path to the capsule directory.
@@ -133,13 +139,11 @@ def parse_filename(capsule_path: Path, filename: str) -> "FileRef":
         ValueError: If the path escapes the capsule directory.
     """
     capsule_resolved = capsule_path.resolve()
-
-    # detect zip containment
     zip_marker = ".zip/"
     zip_pos = filename.lower().find(zip_marker)
 
     if zip_pos != -1:
-        zip_filename = filename[: zip_pos + 4]  # includes ".zip"
+        zip_filename = filename[: zip_pos + 4]
         inner_raw = filename[zip_pos + len(zip_marker) :]
 
         zip_file_path = (capsule_path / zip_filename).resolve()
@@ -147,12 +151,10 @@ def parse_filename(capsule_path: Path, filename: str) -> "FileRef":
         if not zip_file_path.exists():
             raise FileNotFoundError(f"Zip file not found: {zip_file_path}")
 
-        # parse optional sheet from inner path
         sheet_name: str | int = 0
         inner_path_base = inner_raw
         if "::" in inner_raw:
-            parts = inner_raw.rsplit("::", 1)
-            inner_path_base, sheet_name = parts[0], parts[1]
+            inner_path_base, sheet_name = inner_raw.rsplit("::", 1)
 
         return FileRef(
             capsule_path=capsule_resolved,
@@ -162,12 +164,10 @@ def parse_filename(capsule_path: Path, filename: str) -> "FileRef":
             sheet_name=sheet_name,
         )
 
-    # top-level file (possibly with sheet suffix)
     sheet_name = 0
     filename_base = filename
     if "::" in filename:
-        parts = filename.rsplit("::", 1)
-        filename_base, sheet_name = parts[0], parts[1]
+        filename_base, sheet_name = filename.rsplit("::", 1)
 
     file_path = (capsule_path / filename_base).resolve()
     _assert_within_capsule(capsule_resolved, file_path)
@@ -181,46 +181,18 @@ def parse_filename(capsule_path: Path, filename: str) -> "FileRef":
     )
 
 
-def _assert_within_capsule(capsule_resolved: Path, target: Path) -> None:
-    """Raise ValueError if target is outside the capsule directory."""
-    try:
-        target.relative_to(capsule_resolved)
-    except ValueError as exc:
-        raise ValueError(
-            f"Path {target} escapes the capsule directory {capsule_resolved}"
-        ) from exc
-
-
-def _open_file_object(ref: FileRef):
-    """Return a file-like object for the logical file referenced by ref.
-
-    For zip inner files, opens via zipfile without extraction.
-    For direct files, returns the Path (pandas accepts Path directly).
-    """
-    if ref.zip_path is not None and ref.inner_path is not None:
-        zf = zipfile.ZipFile(ref.zip_path)
-        return zf.open(ref.inner_path)
-    return ref.file_path
-
-
-def _scan_csv_preamble(ref: FileRef) -> tuple[int, str]:
-    """Scan a CSV/TSV file to detect leading comment-only rows.
-
-    A "comment-only" row is one that starts with ``#`` and produces only
-    a single field when split by the file's separator (i.e. no tab-separated
-    data). The first row with more than one field is the actual header line
-    (even if it starts with ``#``).
+def scan_csv_preamble(ref: FileRef) -> tuple[int, str]:
+    """Detect leading comment rows and return the effective header line.
 
     Args:
         ref: Resolved CSV/TSV file reference.
 
     Returns:
-        tuple[int, str]: Number of comment-only rows to skip and the raw
-            header line text (with any leading ``# `` stripped).
+        tuple[int, str]: Number of comment-only rows to skip and the header text.
     """
     sep = ref.separator
 
-    def _iter_lines():
+    def iter_lines() -> Iterator[str]:
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 with zf.open(ref.inner_path) as fobj:
@@ -231,28 +203,16 @@ def _scan_csv_preamble(ref: FileRef) -> tuple[int, str]:
                 yield from fobj
 
     skip = 0
-    for line in _iter_lines():
+    for line in iter_lines():
         stripped = line.rstrip("\n")
         if stripped.startswith("#") and len(stripped.split(sep)) <= 1:
             skip += 1
-        else:
-            # This is the header line; strip a leading "# " if present
-            header = (
-                stripped.lstrip("# ").lstrip("#").strip()
-                if stripped.startswith("#")
-                else stripped
-            )
-            # Re-parse using the original stripped line to preserve field values
-            if stripped.startswith("#"):
-                # Remove the very first "# " or "#" prefix only
-                for prefix in ("# ", "#"):
-                    if stripped.startswith(prefix):
-                        header = stripped[len(prefix) :]
-                        break
-            else:
-                header = stripped
-            return skip, header
-
+            continue
+        if stripped.startswith("#"):
+            for prefix in ("# ", "#"):
+                if stripped.startswith(prefix):
+                    return skip, stripped[len(prefix) :]
+        return skip, stripped
     return skip, ""
 
 
@@ -266,22 +226,22 @@ def read_header(ref: FileRef) -> list[str]:
         list[str]: Column names.
     """
     if ref.is_excel:
-        engine = _excel_engine(ref.extension)
+        engine = excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
-            buf = BytesIO(data)
-            df = pd.read_excel(buf, sheet_name=ref.sheet_name, nrows=0, engine=engine)
+            source = BytesIO(data)
         else:
-            df = pd.read_excel(
-                ref.file_path,
-                sheet_name=ref.sheet_name,
-                nrows=0,
-                engine=engine,
-            )
+            source = ref.file_path
+        df = pd.read_excel(
+            source,
+            sheet_name=ref.sheet_name,
+            nrows=0,
+            engine=engine,
+        )
         return list(df.columns)
 
-    _, header_line = _scan_csv_preamble(ref)
+    _, header_line = scan_csv_preamble(ref)
     return header_line.split(ref.separator)
 
 
@@ -295,28 +255,22 @@ def count_rows(ref: FileRef) -> int:
         int: Number of data rows.
     """
     if ref.is_excel:
-        engine = _excel_engine(ref.extension)
+        engine = excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
-            buf = BytesIO(data)
-            df = pd.read_excel(
-                buf,
-                sheet_name=ref.sheet_name,
-                usecols=[0],
-                engine=engine,
-            )
+            source = BytesIO(data)
         else:
-            df = pd.read_excel(
-                ref.file_path,
-                sheet_name=ref.sheet_name,
-                usecols=[0],
-                engine=engine,
-            )
+            source = ref.file_path
+        df = pd.read_excel(
+            source,
+            sheet_name=ref.sheet_name,
+            usecols=[0],
+            engine=engine,
+        )
         return len(df)
 
-    # CSV/TSV — stream-count newlines
-    skip, _ = _scan_csv_preamble(ref)
+    skip, _ = scan_csv_preamble(ref)
     row_count = 0
     if ref.zip_path is not None and ref.inner_path is not None:
         with zipfile.ZipFile(ref.zip_path) as zf:
@@ -327,8 +281,6 @@ def count_rows(ref: FileRef) -> int:
         with open(ref.file_path, "rb") as fobj:
             for _ in fobj:
                 row_count += 1
-
-    # subtract header line and comment-only lines
     return max(0, row_count - 1 - skip)
 
 
@@ -339,29 +291,25 @@ def read_tabular(
     nrows: int | None = None,
     chunksize: int | None = None,
 ) -> pd.DataFrame | Iterator[pd.DataFrame]:
-    """Read a tabular file into a DataFrame.
-
-    Routes to read_csv or read_excel based on file extension.
-    For zip inner files, uses zipfile to obtain a file-like object.
+    """Read a tabular file into a dataframe or chunk iterator.
 
     Args:
         ref: Resolved file reference.
         usecols: Columns to load. None loads all columns.
         nrows: Maximum number of rows to read.
-        chunksize: If set, returns a TextFileReader (CSV only).
+        chunksize: If set, return a chunk iterator for CSV-like files.
 
     Returns:
-        pd.DataFrame | Iterator[pd.DataFrame]: Loaded data or chunk iterator.
+        pd.DataFrame | Iterator[pd.DataFrame]: Loaded dataframe or chunk iterator.
     """
     if ref.is_excel:
-        engine = _excel_engine(ref.extension)
+        engine = excel_engine(ref.extension)
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 data = zf.read(ref.inner_path)
             source = BytesIO(data)
         else:
             source = ref.file_path
-
         return pd.read_excel(
             source,
             sheet_name=ref.sheet_name,
@@ -370,31 +318,71 @@ def read_tabular(
             engine=engine,
         )
 
-    # CSV/TSV — detect leading comment rows
-    skip, header_line = _scan_csv_preamble(ref)
-
-    # Build column names from the cleaned header line so pandas gets correct names
+    skip, header_line = scan_csv_preamble(ref)
     header_cols = header_line.split(ref.separator)
-
-    kwargs: dict = {
-        "sep": ref.separator,
-        "names": header_cols,
-        "skiprows": skip + 1,  # skip comment rows + the original header row
-        "usecols": usecols,
-        "nrows": nrows,
-        "low_memory": False,
-    }
-    if chunksize is not None:
-        kwargs["chunksize"] = chunksize
-
     if ref.zip_path is not None and ref.inner_path is not None:
         zf = zipfile.ZipFile(ref.zip_path)
         raw_file = zf.open(ref.inner_path)
-        reader = pd.read_csv(raw_file, **kwargs)
         if chunksize is not None:
+            reader = pd.read_csv(
+                raw_file,
+                sep=ref.separator,
+                names=header_cols,
+                skiprows=skip + 1,
+                usecols=usecols,
+                nrows=nrows,
+                low_memory=False,
+                chunksize=chunksize,
+            )
             return ManagedChunkReader(reader, raw_file=raw_file, zip_file=zf)
+        reader = pd.read_csv(
+            raw_file,
+            sep=ref.separator,
+            names=header_cols,
+            skiprows=skip + 1,
+            usecols=usecols,
+            nrows=nrows,
+            low_memory=False,
+        )
         raw_file.close()
         zf.close()
         return reader
 
-    return pd.read_csv(ref.file_path, **kwargs)
+    if chunksize is not None:
+        return pd.read_csv(
+            ref.file_path,
+            sep=ref.separator,
+            names=header_cols,
+            skiprows=skip + 1,
+            usecols=usecols,
+            nrows=nrows,
+            low_memory=False,
+            chunksize=chunksize,
+        )
+    return pd.read_csv(
+        ref.file_path,
+        sep=ref.separator,
+        names=header_cols,
+        skiprows=skip + 1,
+        usecols=usecols,
+        nrows=nrows,
+        low_memory=False,
+    )
+
+
+def _assert_within_capsule(capsule_resolved: Path, target: Path) -> None:
+    """Raise if a resolved path escapes the capsule root.
+
+    Args:
+        capsule_resolved: Resolved capsule root.
+        target: Candidate path.
+
+    Raises:
+        ValueError: If the target path escapes the capsule root.
+    """
+    try:
+        target.relative_to(capsule_resolved)
+    except ValueError as exc:
+        raise ValueError(
+            f"Path {target} escapes the capsule directory {capsule_resolved}"
+        ) from exc

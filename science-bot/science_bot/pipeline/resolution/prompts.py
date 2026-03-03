@@ -13,7 +13,9 @@ plan for one supported family.
 Rules:
 - You must choose exactly one next action.
 - Allowed actions are:
+  - use_list_all_capsule_files
   - use_list_zip_contents
+  - use_search_filenames
   - use_list_excel_sheets
   - use_find_files_with_column
   - use_get_file_schema
@@ -22,6 +24,7 @@ Rules:
   - use_get_column_stats
   - use_search_column_for_value
   - use_get_row_sample
+  - use_summarize_fasta_file
   - finalize
   - fail
 - Use tools to inspect files, sheets, columns, and values.
@@ -69,9 +72,10 @@ def build_resolution_prompt(
     """Build the compact user prompt for one resolver iteration."""
     candidate_lines = []
     for candidate in scratchpad.candidate_files:
+        display_name = candidate.path or candidate.filename
         candidate_lines.append(
             "- "
-            f"{candidate.filename} "
+            f"{display_name} "
             f"(type={candidate.file_type}, size={candidate.size_human}, "
             f"rows={candidate.row_count}, cols={candidate.column_count}, "
             f"wide={candidate.is_wide})"
