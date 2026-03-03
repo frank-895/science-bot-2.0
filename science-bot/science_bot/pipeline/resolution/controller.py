@@ -179,6 +179,7 @@ async def run_resolution_controller(
             plan = cast(
                 FamilyResolutionPlan,
                 _normalize_and_validate_plan(
+                    capsule_path=stage_input.capsule_path,
                     scratchpad=scratchpad,
                     plan=plan,
                 ),
@@ -396,7 +397,12 @@ def _decision_to_tool_call(
     if decision.action == "use_list_excel_sheets":
         return (
             "list_excel_sheets",
-            {"filename": _require_text(decision.filename, "filename")},
+            {
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                )
+            },
         )
     if decision.action == "use_find_files_with_column":
         return (
@@ -406,13 +412,21 @@ def _decision_to_tool_call(
     if decision.action == "use_get_file_schema":
         return (
             "get_file_schema",
-            {"filename": _require_text(decision.filename, "filename")},
+            {
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                )
+            },
         )
     if decision.action == "use_search_columns":
         return (
             "search_columns",
             {
-                "filename": _require_text(decision.filename, "filename"),
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                ),
                 "query": _require_text(decision.query, "query"),
             },
         )
@@ -420,7 +434,10 @@ def _decision_to_tool_call(
         return (
             "get_column_values",
             {
-                "filename": _require_text(decision.filename, "filename"),
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                ),
                 "column": _require_text(decision.column, "column"),
                 "max_values": decision.max_values,
             },
@@ -429,7 +446,10 @@ def _decision_to_tool_call(
         return (
             "get_column_stats",
             {
-                "filename": _require_text(decision.filename, "filename"),
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                ),
                 "column": _require_text(decision.column, "column"),
             },
         )
@@ -437,7 +457,10 @@ def _decision_to_tool_call(
         return (
             "search_column_for_value",
             {
-                "filename": _require_text(decision.filename, "filename"),
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                ),
                 "column": _require_text(decision.column, "column"),
                 "query": _require_text(decision.query, "query"),
                 "max_matches": decision.max_matches,
@@ -447,7 +470,10 @@ def _decision_to_tool_call(
         return (
             "get_row_sample",
             {
-                "filename": _require_text(decision.filename, "filename"),
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                ),
                 "columns": decision.columns,
                 "n": decision.n,
                 "random_sample": decision.random_sample,
@@ -456,9 +482,25 @@ def _decision_to_tool_call(
     if decision.action == "use_summarize_fasta_file":
         return (
             "summarize_fasta_file",
-            {"filename": _require_text(decision.filename, "filename")},
+            {
+                "filename": _filename_with_zip_context(
+                    decision.filename,
+                    decision.zip_filename,
+                )
+            },
         )
     raise ResolutionValidationError(f"Unsupported decision action: {decision.action}")
+
+
+def _filename_with_zip_context(
+    filename: str | None,
+    zip_filename: str | None,
+) -> str:
+    """Return an extended filename including zip context when available."""
+    resolved_filename = _require_text(filename, "filename")
+    if zip_filename is None or ".zip/" in resolved_filename:
+        return resolved_filename
+    return f"{_require_text(zip_filename, 'zip_filename')}/{resolved_filename}"
 
 
 def _require_text(value: str | None, field_name: str) -> str:
@@ -520,17 +562,23 @@ def _finalize_rejection_step(
 
 def _normalize_and_validate_plan(
     *,
+    capsule_path: Path,
     scratchpad: ResolutionScratchpad,
     plan: BaseModel,
 ) -> BaseModel:
     """Normalize resolved filenames and validate observed columns before assembly."""
-    normalized_plan = _normalize_plan_filenames(scratchpad=scratchpad, plan=plan)
+    normalized_plan = _normalize_plan_filenames(
+        capsule_path=capsule_path,
+        scratchpad=scratchpad,
+        plan=plan,
+    )
     _validate_plan_columns(scratchpad=scratchpad, plan=normalized_plan)
     return normalized_plan
 
 
 def _normalize_plan_filenames(
     *,
+    capsule_path: Path,
     scratchpad: ResolutionScratchpad,
     plan: BaseModel,
 ) -> BaseModel:
@@ -539,6 +587,7 @@ def _normalize_plan_filenames(
     if hasattr(plan, "filename") and plan.filename is not None:
         filename = cast(str, plan.filename)
         update["filename"] = _normalize_observed_filename(
+            capsule_path=capsule_path,
             scratchpad=scratchpad,
             filename=filename,
         )
@@ -546,11 +595,22 @@ def _normalize_plan_filenames(
         result_table_files = cast(dict[str, str], plan.result_table_files)
         update["result_table_files"] = {
             label: _normalize_observed_filename(
+                capsule_path=capsule_path,
                 scratchpad=scratchpad,
                 filename=filename,
             )
             for label, filename in result_table_files.items()
         }
+    for field_name in ("count_matrix_file", "sample_metadata_file"):
+        if hasattr(plan, field_name):
+            field_value = getattr(plan, field_name)
+            if field_value is None:
+                continue
+            update[field_name] = _normalize_observed_filename(
+                capsule_path=capsule_path,
+                scratchpad=scratchpad,
+                filename=cast(str, field_value),
+            )
     merge_plan = getattr(plan, "merge_plan", None)
     if merge_plan is not None:
         normalized_merge_plan = merge_plan.model_copy(
@@ -559,6 +619,7 @@ def _normalize_plan_filenames(
                     source.model_copy(
                         update={
                             "filename": _normalize_observed_filename(
+                                capsule_path=capsule_path,
                                 scratchpad=scratchpad,
                                 filename=source.filename,
                             )
@@ -572,6 +633,7 @@ def _normalize_plan_filenames(
                     else merge_plan.join.model_copy(
                         update={
                             "metadata_file": _normalize_observed_filename(
+                                capsule_path=capsule_path,
                                 scratchpad=scratchpad,
                                 filename=merge_plan.join.metadata_file,
                             )
@@ -588,10 +650,13 @@ def _normalize_plan_filenames(
 
 def _normalize_observed_filename(
     *,
+    capsule_path: Path,
     scratchpad: ResolutionScratchpad,
     filename: str,
 ) -> str:
     """Normalize a finalized filename against observed archive entries."""
+    _ensure_known_zip_entries(capsule_path=capsule_path, scratchpad=scratchpad)
+
     if ".zip/" in filename:
         zip_filename, inner_path = filename.split(".zip/", 1)
         zip_filename = f"{zip_filename}.zip"
@@ -620,6 +685,27 @@ def _normalize_observed_filename(
             f"Finalize references ambiguous zip entries for {filename!r}: {matches}"
         )
     return matches[0]
+
+
+def _ensure_known_zip_entries(
+    *,
+    capsule_path: Path,
+    scratchpad: ResolutionScratchpad,
+) -> None:
+    """Populate known zip entries from shortlisted archive candidates on demand."""
+    for candidate in scratchpad.candidate_files:
+        if candidate.file_type != "zip":
+            continue
+        zip_name = candidate.path or candidate.filename
+        if zip_name in scratchpad.known_zip_entries:
+            continue
+        try:
+            manifest = list_zip_contents(capsule_path, zip_name)
+        except (FileNotFoundError, ValueError):
+            continue
+        scratchpad.known_zip_entries[zip_name] = [
+            entry.inner_path for entry in manifest.entries if entry.is_readable
+        ]
 
 
 def _validate_plan_columns(

@@ -560,23 +560,20 @@ def test_run_resolution_controller_normalizes_zip_entry_filename(
         "list_all_capsule_files",
         lambda _path: FullCapsuleManifest(
             capsule_path=str(tmp_path),
-            files=[],
-            total_size_bytes=0,
+            files=[
+                AllFileInfo(
+                    path="Animals_Cele.busco.zip",
+                    filename="Animals_Cele.busco.zip",
+                    extension=".zip",
+                    size_bytes=1,
+                    size_human="1 B",
+                    category="zip",
+                    is_supported_for_deeper_inspection=True,
+                )
+            ],
+            total_size_bytes=1,
         ),
     )
-
-    class ZipDecision:
-        action = "use_list_zip_contents"
-        reason = "inspect zip"
-        zip_filename = "Animals_Cele.busco.zip"
-        filename = None
-        query = None
-        column = None
-        columns = []
-        n = 10
-        random_sample = False
-        max_values = 50
-        max_matches = 50
 
     class FinalizeDecision:
         action = "finalize"
@@ -601,7 +598,7 @@ def test_run_resolution_controller_normalizes_zip_entry_filename(
         decimal_places = None
         round_to = None
 
-    decisions = [ZipDecision(), FinalizeDecision()]
+    decisions = [FinalizeDecision()]
 
     async def fake_parse_structured(**_kwargs):
         return decisions.pop(0)
@@ -665,3 +662,23 @@ def test_run_resolution_controller_normalizes_zip_entry_filename(
     assert output.selected_files == [
         "Animals_Cele.busco.zip/run_eukaryota_odb10/full_table.tsv"
     ]
+
+
+def test_decision_to_tool_call_combines_zip_filename_with_inner_filename():
+    class Decision:
+        action = "use_get_file_schema"
+        reason = "inspect"
+        zip_filename = "bundle.zip"
+        filename = "inner/data.tsv"
+        query = None
+        column = None
+        columns = []
+        n = 10
+        random_sample = False
+        max_values = 50
+        max_matches = 50
+
+    tool_name, arguments = controller._decision_to_tool_call(Decision())
+
+    assert tool_name == "get_file_schema"
+    assert arguments == {"filename": "bundle.zip/inner/data.tsv"}
