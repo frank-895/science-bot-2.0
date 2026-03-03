@@ -1,6 +1,6 @@
 """Public resolution stage entrypoint."""
 
-from science_bot.pipeline.resolution._agent import run_resolution_agent
+from science_bot.pipeline.resolution.controller import run_resolution_controller
 from science_bot.pipeline.resolution.schemas import (
     ResolutionStageInput,
     ResolutionStageOutput,
@@ -18,4 +18,4 @@ async def run_resolution_stage(
     Returns:
         ResolutionStageOutput: Final payload and compact debug summaries.
     """
-    return await run_resolution_agent(stage_input)
+    return await run_resolution_controller(stage_input)

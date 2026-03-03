@@ -1,7 +1,7 @@
 """Prompt helpers for the resolution stage."""
 
 from science_bot.pipeline.contracts import QuestionFamily
-from science_bot.pipeline.resolution.schemas import ResolutionScratchpad
+from science_bot.pipeline.resolution.planning import ResolutionScratchpad
 from science_bot.pipeline.resolution.tools import AVAILABLE_TOOLS_TEXT
 
 MAX_PROMPT_COLUMNS = 40
@@ -66,16 +66,7 @@ def build_resolution_prompt(
     scratchpad: ResolutionScratchpad,
     iterations_remaining: int,
 ) -> str:
-    """Build the compact user prompt for one resolver iteration.
-
-    Args:
-        question: Natural-language user question.
-        scratchpad: Current compact scratchpad state.
-        iterations_remaining: Remaining controller iterations.
-
-    Returns:
-        str: User prompt for the structured decision call.
-    """
+    """Build the compact user prompt for one resolver iteration."""
     candidate_lines = []
     for candidate in scratchpad.candidate_files:
         candidate_lines.append(
@@ -129,12 +120,5 @@ def build_resolution_prompt(
 
 
 def build_system_prompt(family: QuestionFamily) -> str:
-    """Build the system prompt for the selected question family.
-
-    Args:
-        family: Supported question family.
-
-    Returns:
-        str: System prompt text.
-    """
+    """Build the system prompt for the selected question family."""
     return "\n\n".join([RESOLUTION_SYSTEM_PROMPT, FAMILY_PROMPT_SUPPLEMENTS[family]])
