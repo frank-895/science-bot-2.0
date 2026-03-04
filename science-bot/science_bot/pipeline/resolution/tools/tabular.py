@@ -348,6 +348,7 @@ def load_dataframe(
 
 
 def _filter_columns(columns: list[str], query: str) -> list[str]:
+    """Return columns matching a substring or regex query."""
     query_lower = query.lower()
     substring_matches = [column for column in columns if query_lower in column.lower()]
     if substring_matches:
@@ -362,6 +363,7 @@ def _filter_columns(columns: list[str], query: str) -> list[str]:
 def _infer_dtype_label(
     series: pd.Series,
 ) -> Literal["string", "integer", "float", "boolean", "mixed"]:
+    """Infer a compact schema label from a sampled pandas series."""
     dtype = series.dtype
     if pd.api.types.is_bool_dtype(dtype):
         return "boolean"
@@ -387,6 +389,7 @@ def _infer_dtype_label(
 
 
 def _sanitize_value(value: object) -> str | int | float | bool | None:
+    """Convert dataframe cell values into JSON-friendly scalar values."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     if isinstance(value, bool):
@@ -401,6 +404,7 @@ def _sanitize_value(value: object) -> str | int | float | bool | None:
 def _df_to_row_dicts(
     dataframe: pd.DataFrame,
 ) -> list[dict[str, str | int | float | bool | None]]:
+    """Convert a dataframe into row dictionaries with sanitized scalars."""
     return [
         {column: _sanitize_value(row[column]) for column in dataframe.columns}
         for _, row in dataframe.iterrows()

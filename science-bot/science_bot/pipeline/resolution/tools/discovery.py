@@ -245,12 +245,14 @@ def file_category_for_extension(extension: str) -> FileCategory:
 
 
 def _supports_deeper_inspection(category: FileCategory) -> bool:
+    """Return whether discovery should advertise richer follow-up tools."""
     return category in {"tabular", "excel", "zip", "sequence"}
 
 
 def _sort_filename_matches(
     matches: list[FilenameSearchResult],
 ) -> list[FilenameSearchResult]:
+    """Sort filename matches by relevance and deterministic path order."""
     return sorted(
         matches,
         key=lambda result: (
@@ -262,6 +264,7 @@ def _sort_filename_matches(
 
 
 def _tabular_file_type(extension: str) -> Literal["csv", "tsv", "excel"]:
+    """Map a tabular extension to the manifest file-type label."""
     if extension in EXCEL_EXTENSIONS:
         return "excel"
     if extension in {".tsv", ".tab"}:

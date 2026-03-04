@@ -48,6 +48,7 @@ def summarize_fasta_file(capsule_path: Path, filename: str) -> FastaSummary:
 
 
 def _read_fasta_sequences(ref: FileRef) -> list[str]:
+    """Return concatenated FASTA sequences from a text file reference."""
     sequences: list[str] = []
     current: list[str] = []
     saw_header = False
@@ -72,6 +73,7 @@ def _read_fasta_sequences(ref: FileRef) -> list[str]:
 
 
 def _iter_text_lines(ref: FileRef) -> list[str]:
+    """Read all decoded text lines from a direct file or zip entry."""
     if ref.zip_path is not None and ref.inner_path is not None:
         with zipfile.ZipFile(ref.zip_path) as archive:
             with archive.open(ref.inner_path) as handle:
@@ -83,6 +85,7 @@ def _iter_text_lines(ref: FileRef) -> list[str]:
 def _infer_alphabet_hint(
     sequences: list[str],
 ) -> Literal["dna", "protein", "unknown"]:
+    """Infer whether observed sequence characters look like DNA or protein."""
     characters = {character.upper() for sequence in sequences for character in sequence}
     characters.discard(" ")
     if not characters:

@@ -199,6 +199,7 @@ def scan_csv_preamble(ref: FileRef) -> tuple[int, str]:
     sep = ref.separator
 
     def iter_lines() -> Iterator[str]:
+        """Yield decoded text lines from direct or zipped CSV-like content."""
         if ref.zip_path is not None and ref.inner_path is not None:
             with zipfile.ZipFile(ref.zip_path) as zf:
                 with zf.open(ref.inner_path) as raw_file:

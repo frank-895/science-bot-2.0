@@ -75,6 +75,7 @@ class ResolutionValidationError(ResolutionError):
 
 
 def _initial_scratchpad(stage_input: ResolutionStageInput) -> ResolutionScratchpad:
+    """Build the initial resolver scratchpad from discovery outputs."""
     manifest = list_all_capsule_files(stage_input.capsule_path)
     candidates = shortlist_candidate_files(
         manifest,
@@ -360,10 +361,12 @@ def _tool_signature(
     tool_name: str,
     arguments: dict[str, object],
 ) -> tuple[str, tuple[tuple[str, object], ...]]:
+    """Return a hashable signature for one tool invocation."""
     return (tool_name, tuple(sorted(arguments.items(), key=lambda item: item[0])))
 
 
 def _expect_str(arguments: dict[str, object], key: str) -> str:
+    """Return one required string argument from a tool payload."""
     value = arguments.get(key)
     if not isinstance(value, str):
         raise ResolutionValidationError(f"{key} must be a string.")
@@ -371,6 +374,7 @@ def _expect_str(arguments: dict[str, object], key: str) -> str:
 
 
 def _expect_int(arguments: dict[str, object], key: str, *, default: int) -> int:
+    """Return one integer argument from a tool payload."""
     value = arguments.get(key, default)
     if not isinstance(value, int):
         raise ResolutionValidationError(f"{key} must be an integer.")
@@ -378,6 +382,7 @@ def _expect_int(arguments: dict[str, object], key: str, *, default: int) -> int:
 
 
 def _expect_bool(arguments: dict[str, object], key: str, *, default: bool) -> bool:
+    """Return one boolean argument from a tool payload."""
     value = arguments.get(key, default)
     if not isinstance(value, bool):
         raise ResolutionValidationError(f"{key} must be a boolean.")
@@ -385,6 +390,7 @@ def _expect_bool(arguments: dict[str, object], key: str, *, default: bool) -> bo
 
 
 def _expect_str_list(arguments: dict[str, object], key: str) -> list[str]:
+    """Return one required list-of-strings argument from a tool payload."""
     value = arguments.get(key)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ResolutionValidationError(f"{key} must be a list of strings.")
@@ -520,12 +526,14 @@ def _filename_with_zip_context(
 
 
 def _require_text(value: str | None, field_name: str) -> str:
+    """Require a text field for a resolver action."""
     if value is None:
         raise ResolutionValidationError(f"{field_name} is required for this action.")
     return value
 
 
 def _require_value(value: T | None, field_name: str) -> T:
+    """Require a non-null value for finalize payload construction."""
     if value is None:
         raise ResolutionValidationError(f"{field_name} is required for finalize.")
     return value

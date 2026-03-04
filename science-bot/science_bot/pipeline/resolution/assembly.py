@@ -360,6 +360,16 @@ def _load_required_dataframe(
     filename: str,
     required_columns: list[str],
 ) -> tuple[pd.DataFrame, list[str]]:
+    """Load only the resolved columns required for execution.
+
+    Args:
+        capsule_path: Absolute path to the capsule directory.
+        filename: Resolved data filename.
+        required_columns: Columns that must be loaded.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: Loaded dataframe and trace notes.
+    """
     if not required_columns:
         raise ValueError(
             f"Resolution plan for {filename!r} did not identify required columns."
@@ -524,6 +534,7 @@ def _join_metadata(
 
 
 def _ordered_columns(*columns: str | None) -> list[str]:
+    """Return unique non-empty column names in first-seen order."""
     seen: set[str] = set()
     ordered: list[str] = []
     for column in columns:
@@ -534,10 +545,12 @@ def _ordered_columns(*columns: str | None) -> list[str]:
 
 
 def _filter_columns(filters: list[ResolvedFilterPlan]) -> list[str]:
+    """Extract referenced column names from resolved filter plans."""
     return [filter_item.column for filter_item in filters]
 
 
 def _to_execution_filters(filters: list[ResolvedFilterPlan]) -> list[ResolvedFilter]:
+    """Convert resolved filter plans into execution-stage filter models."""
     return [
         ResolvedFilter(
             column=filter_item.column,

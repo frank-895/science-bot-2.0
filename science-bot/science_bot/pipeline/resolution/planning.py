@@ -816,6 +816,7 @@ def _record_failed_search(
     filename: str | None = None,
     column: str | None = None,
 ) -> None:
+    """Append one failed search attempt to bounded scratchpad history."""
     scratchpad.failed_searches = (
         scratchpad.failed_searches
         + [
@@ -831,6 +832,7 @@ def _record_failed_search(
 
 
 def _truncate(value: str, max_length: int) -> str:
+    """Shorten text with an ellipsis when it exceeds the limit."""
     if len(value) <= max_length:
         return value
     return value[: max_length - 3] + "..."
