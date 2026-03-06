@@ -29,7 +29,6 @@ from science_bot.tracing import (
     BenchmarkRowTraceSummary,
     BenchmarkTraceManifest,
     BenchmarkTraceSummary,
-    RunTraceSummary,
     TraceWriter,
 )
 
@@ -173,11 +172,6 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(prog="science-bot")
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    run_parser = subparsers.add_parser("run")
-    run_parser.add_argument("--question", required=True)
-    run_parser.add_argument("--capsule", required=True)
-    run_parser.add_argument("--trace-dir", required=False)
 
     benchmark_parser = subparsers.add_parser("benchmark")
     benchmark_parser.add_argument("--directory", required=True)
@@ -673,46 +667,6 @@ async def run_benchmark(
     return summary
 
 
-def format_run_output(result: OrchestratorResult) -> str:
-    """Format single-run output for terminal display.
-
-    Args:
-        result: Orchestrator result to render.
-
-    Returns:
-        str: Human-readable output.
-    """
-    lines = [
-        f"Question: {result.question}",
-        f"Capsule: {result.capsule_path}",
-        f"Status: {result.status}",
-        f"Answer: {result.answer}",
-    ]
-    classification_family = _extract_metadata_string(
-        result.metadata, "classification_family"
-    )
-    if classification_family is not None:
-        lines.append(f"Family: {classification_family}")
-    resolution_iterations_used = _extract_metadata_int(
-        result.metadata,
-        "resolution_iterations_used",
-    )
-    if resolution_iterations_used is not None:
-        lines.append(f"Resolution iterations: {resolution_iterations_used}")
-    selected_files = _extract_metadata_str_list(
-        result.metadata,
-        "resolution_selected_files",
-    )
-    if selected_files:
-        lines.append(f"Selected files: {', '.join(selected_files)}")
-    execution_notes = _extract_metadata_str_list(result.metadata, "execution_notes")
-    if execution_notes:
-        lines.append(f"Execution notes: {' | '.join(execution_notes)}")
-    if result.error:
-        lines.append(f"Error: {result.error}")
-    return "\n".join(lines)
-
-
 def format_benchmark_output(summary: BenchmarkSummary) -> str:
     """Format benchmark output for terminal display.
 
@@ -822,64 +776,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "run":
-            trace_writer = (
-                TraceWriter.for_run(Path(args.trace_dir).expanduser().resolve())
-                if getattr(args, "trace_dir", None)
-                else None
-            )
-            request = OrchestratorRequest(
-                question=args.question,
-                capsule_path=Path(args.capsule).expanduser().resolve(),
-                trace_writer=trace_writer,
-            )
-            if trace_writer is not None:
-                trace_writer.write_event(
-                    event="run_started",
-                    stage="cli",
-                    question=request.question,
-                    payload={"capsule_path": request.capsule_path},
-                )
-            result = asyncio.run(run_orchestrator(request))
-            if trace_writer is not None:
-                trace_writer.write_event(
-                    event="run_finished",
-                    stage="cli",
-                    question=result.question,
-                    family=_extract_metadata_string(
-                        result.metadata, "classification_family"
-                    ),
-                    payload={
-                        "status": result.status,
-                        "answer": result.answer,
-                    },
-                )
-                trace_writer.write_summary(
-                    RunTraceSummary(
-                        status=result.status,
-                        question=result.question,
-                        capsule_path=str(result.capsule_path),
-                        classification_family=_extract_metadata_string(
-                            result.metadata, "classification_family"
-                        ),
-                        resolution_iterations_used=_extract_metadata_int(
-                            result.metadata,
-                            "resolution_iterations_used",
-                        ),
-                        selected_files=_extract_metadata_str_list(
-                            result.metadata,
-                            "resolution_selected_files",
-                        ),
-                        answer=result.answer,
-                        execution_family=_extract_metadata_string(
-                            result.metadata, "execution_family"
-                        ),
-                        error=result.error,
-                    )
-                )
-            print(format_run_output(result))
-            return 0
-
         if args.command == "benchmark":
             benchmark_directory = Path(args.directory).expanduser().resolve()
             csv_path = Path(args.csv).expanduser().resolve()
