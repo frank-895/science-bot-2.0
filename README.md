@@ -13,7 +13,7 @@ git clone https://github.com/frank-895/science-bot.git
 3. Start executor workers:
 
 ```bash
-docker compose up -d --build --scale runner=4
+docker compose up -d --scale runner=4
 ```
 
 ## Run benchmark
@@ -22,9 +22,15 @@ docker compose up -d --build --scale runner=4
 uv --project science-bot run science-bot benchmark \
   --directory <path/to/capsule_folders.zip> \
   --csv <path/to/BixBenchFiltered_50_clean.csv>
-  --trace-dir <path/to/logs>                          # optional tracing
-
 ```
+
+Tracing is written to:
+
+```bash
+.science-bot/traces
+```
+
+The trace directory is cleaned at the start of each benchmark run.
 
 Stop workers:
 

@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from science_bot.agent.runtime import run_agent
-from science_bot.tracing import TraceWriter
 
 
 class OrchestratorRequest(BaseModel):
@@ -15,14 +14,12 @@ class OrchestratorRequest(BaseModel):
     Attributes:
         question: User question that should be answered from the capsule.
         capsule_path: Filesystem path to the extracted capsule directory.
-        trace_writer: Optional trace writer for structured run diagnostics.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     question: str
     capsule_path: Path
-    trace_writer: TraceWriter | None = None
 
     @field_validator("question")
     @classmethod
@@ -81,36 +78,14 @@ async def run_orchestrator(request: OrchestratorRequest) -> OrchestratorResult:
     if not request.capsule_path.exists():
         raise FileNotFoundError(f"Capsule path not found: {request.capsule_path}")
 
-    if request.trace_writer is not None:
-        request.trace_writer.write_event(
-            event="orchestrator_started",
-            stage="orchestrator",
-            question=request.question,
-            payload={"capsule_path": request.capsule_path},
-        )
-
     agent_result = await run_agent(
         question=request.question,
         capsule_path=request.capsule_path,
-        trace_writer=request.trace_writer,
     )
 
     if agent_result.status != "completed" or agent_result.answer is None:
         terminal_reason = agent_result.failure_reason or "agent_failed"
         raise RuntimeError(f"Agent failed to produce an answer: {terminal_reason}")
-
-    if request.trace_writer is not None:
-        request.trace_writer.write_event(
-            event="orchestrator_finished",
-            stage="orchestrator",
-            question=request.question,
-            payload={
-                "status": agent_result.status,
-                "iterations_used": agent_result.iterations_used,
-                "step_count": len(agent_result.steps),
-                "terminal_reason": agent_result.failure_reason,
-            },
-        )
 
     return OrchestratorResult(
         question=request.question,

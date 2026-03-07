@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,6 @@ from science_bot.agent.orchestrator import (
     OrchestratorRequest,
     run_orchestrator,
 )
-from science_bot.tracing import TraceWriter
 
 
 def test_orchestrator_request_rejects_empty_question(tmp_path: Path) -> None:
@@ -31,22 +29,19 @@ def test_orchestrator_raises_for_missing_capsule(tmp_path: Path) -> None:
         )
 
 
-def test_orchestrator_returns_agent_answer_and_writes_trace(
+def test_orchestrator_returns_agent_answer(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     capsule_path = tmp_path / "capsule"
     capsule_path.mkdir()
-    trace_writer = TraceWriter.for_run(tmp_path / "traces")
-    
+
     async def fake_run_agent(
         *,
         question: str,
         capsule_path: Path,
-        trace_writer: TraceWriter | None = None,
         max_iterations: int = 6,
     ) -> AgentRunResult:
-        del trace_writer
         del max_iterations
         assert question == "How many rows?"
         assert capsule_path.name == "capsule"
@@ -68,7 +63,6 @@ def test_orchestrator_returns_agent_answer_and_writes_trace(
             OrchestratorRequest(
                 question="How many rows?",
                 capsule_path=capsule_path,
-                trace_writer=trace_writer,
             )
         )
     )
@@ -83,14 +77,3 @@ def test_orchestrator_returns_agent_answer_and_writes_trace(
     assert result.metadata["execution_family"] == "agent"
     assert result.metadata["execution_step_count"] == 2
     assert result.metadata["terminal_reason"] is None
-
-    events = [
-        json.loads(line)
-        for line in (trace_writer.root_dir / "events.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
-    assert [event["event"] for event in events] == [
-        "orchestrator_started",
-        "orchestrator_finished",
-    ]

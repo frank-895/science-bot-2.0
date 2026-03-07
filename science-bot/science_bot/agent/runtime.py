@@ -15,7 +15,6 @@ from science_bot.providers.executor import (
     run_python,
 )
 from science_bot.providers.llm import parse_structured
-from science_bot.tracing import TraceWriter
 
 DEFAULT_MAX_ITERATIONS = 6
 DEFAULT_PYTHON_TIMEOUT_SECONDS = 30
@@ -25,7 +24,6 @@ async def run_agent(
     *,
     question: str,
     capsule_path: Path,
-    trace_writer: TraceWriter | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
 ) -> AgentRunResult:
     """Run the real-mode agent loop without oracle correctness feedback.
@@ -33,7 +31,6 @@ async def run_agent(
     Args:
         question: Natural language question to answer.
         capsule_path: Capsule data directory.
-        trace_writer: Optional trace writer for run diagnostics.
         max_iterations: Maximum number of decision iterations.
 
     Returns:
@@ -65,8 +62,6 @@ async def run_agent(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_model=AgentDecision,
-            trace_writer=trace_writer,
-            trace_stage="agent",
         )
 
         if decision.decision == "run_python":
