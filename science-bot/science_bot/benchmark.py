@@ -422,7 +422,7 @@ def build_capsule_manifest(
     *,
     host_capsule_path: Path,
     prompt_capsule_path: Path,
-    max_entries: int = 200,
+    max_entries: int = 40,
 ) -> str:
     """Build a bounded recursive file listing for prompt grounding.
 
@@ -441,13 +441,65 @@ def build_capsule_manifest(
     if not files:
         return "(no files found)"
 
+    preferred_suffixes = {
+        ".csv",
+        ".tsv",
+        ".txt",
+        ".xlsx",
+        ".xls",
+        ".json",
+        ".parquet",
+        ".feather",
+    }
+    noisy_suffixes = {
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".faa",
+        ".fa",
+        ".fna",
+        ".fastq",
+        ".fq",
+    }
+
+    preferred_files = [
+        path for path in files if path.suffix.lower() in preferred_suffixes
+    ]
+    fallback_files = [path for path in files if path not in preferred_files]
+    selected_files = (preferred_files + fallback_files)[:max_entries]
+
     lines: list[str] = []
-    for file_path in files[:max_entries]:
+    for file_path in selected_files:
         relative_path = file_path.relative_to(host_capsule_path)
         lines.append(str(prompt_capsule_path / relative_path))
 
-    if len(files) > max_entries:
-        lines.append(f"... ({len(files) - max_entries} more files)")
+    extension_counts: dict[str, int] = {}
+    noisy_file_count = 0
+    for file_path in files:
+        extension = file_path.suffix.lower() or "<no_ext>"
+        extension_counts[extension] = extension_counts.get(extension, 0) + 1
+        if extension in noisy_suffixes:
+            noisy_file_count += 1
+
+    if len(files) > len(selected_files):
+        lines.append(f"... ({len(files) - len(selected_files)} more files omitted)")
+    if noisy_file_count:
+        lines.append(f"[summary] noisy_files={noisy_file_count}")
+
+    top_extensions = sorted(
+        extension_counts.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:8]
+    extension_summary = ", ".join(f"{ext}:{count}" for ext, count in top_extensions)
+    lines.append(
+        "[summary] total_files="
+        f"{len(files)} "
+        f"preferred_files={len(preferred_files)} "
+        f"top_extensions={extension_summary}"
+    )
 
     return "\n".join(lines)
 

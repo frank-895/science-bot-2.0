@@ -300,6 +300,28 @@ def test_build_capsule_manifest_maps_to_prompt_paths(tmp_path: Path) -> None:
     assert "/capsules/abc/CapsuleData-x/nested/table.csv" in manifest
 
 
+def test_build_capsule_manifest_adds_summary_and_prioritizes_tabular(
+    tmp_path: Path,
+) -> None:
+    host_capsule = tmp_path / "host" / "CapsuleData-x"
+    (host_capsule / "a.csv").write_text("x\n1\n", encoding="utf-8")
+    (host_capsule / "b.xlsx").write_text("placeholder", encoding="utf-8")
+    (host_capsule / "c.zip").write_text("placeholder", encoding="utf-8")
+    (host_capsule / "d.faa").write_text("placeholder", encoding="utf-8")
+
+    manifest = build_capsule_manifest(
+        host_capsule_path=host_capsule,
+        prompt_capsule_path=Path("/capsules/abc/CapsuleData-x"),
+        max_entries=2,
+    )
+
+    lines = manifest.splitlines()
+    assert "/capsules/abc/CapsuleData-x/a.csv" in lines[0]
+    assert "/capsules/abc/CapsuleData-x/b.xlsx" in lines[1]
+    assert any(line.startswith("[summary] noisy_files=") for line in lines)
+    assert any(line.startswith("[summary] total_files=") for line in lines)
+
+
 def test_score_benchmark_response_for_supported_modes() -> None:
     assert score_benchmark_response("str_verifier", "  Hello  ", "hello")
     assert score_benchmark_response("range_verifier", "(1.5,1.7)", "value 1.6")

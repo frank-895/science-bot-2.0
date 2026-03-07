@@ -2,20 +2,19 @@
 
 from pathlib import Path
 
-DECISION_SCHEMA_TEXT = """Return JSON matching exactly one of:
-1) {"decision":"run_python","script":"<python>"}
-2) {"decision":"respond","answer":"<final answer>"}
-3) {"decision":"need_info","reason":"<missing information>"}
-Only the selected decision and its required field must be present.
-Extra keys are ignored.
+DECISION_SCHEMA_TEXT = """Return one JSON object with this schema:
+{"python": "<python code>|null", "final_answer": "<string>|null"}
+Rules:
+- Provide exactly one of "python" or "final_answer".
+- Use "python" when you need another execution step.
+- Use "final_answer" only when you are ready to answer.
+- Extra keys are ignored.
 """
 
 
 REPAIR_PROMPT_TEXT = """Your previous output did not match the required schema.
-Return one JSON object only, with exactly one valid decision variant:
-1) {"decision":"run_python","script":"<python>"}
-2) {"decision":"respond","answer":"<final answer>"}
-3) {"decision":"need_info","reason":"<missing information>"}
+Return one JSON object only:
+{"python": "<python code>|null", "final_answer": "<string>|null"}
 Do not include markdown, prose, or code fences.
 """
 
@@ -35,6 +34,7 @@ def build_system_prompt(max_iterations: int) -> str:
         f"You have at most {max_iterations} iterations total.\n"
         "Start executing quickly, avoid broad exploration, and provide a candidate "
         "answer as soon as evidence is sufficient.\n"
+        "If you decide to stop or give up, return your best available final_answer.\n"
         "Prefer deterministic scripts and concise outputs.\n"
         f"{DECISION_SCHEMA_TEXT}"
     )

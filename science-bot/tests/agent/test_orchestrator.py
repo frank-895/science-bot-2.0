@@ -57,8 +57,12 @@ def test_orchestrator_returns_agent_answer(
             answer="42",
             iterations_used=2,
             steps=[
-                AgentStepRecord(iteration=1, decision="run_python"),
-                AgentStepRecord(iteration=2, decision="respond", answer="42"),
+                AgentStepRecord(iteration=1, script="print(1)"),
+                AgentStepRecord(
+                    iteration=2,
+                    script="",
+                    proposed_final_answer="42",
+                ),
             ],
             failure_reason=None,
         )
@@ -108,7 +112,7 @@ def test_orchestrator_allows_non_host_capsule_path_when_manifest_present(
             status="completed",
             answer="ok",
             iterations_used=1,
-            steps=[AgentStepRecord(iteration=1, decision="respond", answer="ok")],
+            steps=[AgentStepRecord(iteration=1, script="")],
             failure_reason=None,
         )
 

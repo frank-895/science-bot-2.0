@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from science_bot.tracing import TraceWriter
 
-DEFAULT_OPENAI_MODEL = "gpt-5"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
 T = TypeVar("T", bound=BaseModel)

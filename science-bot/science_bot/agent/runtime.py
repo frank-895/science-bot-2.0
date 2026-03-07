@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from science_bot.agent.contracts import (
-    AgentDecision,
+    AgentIterationResponse,
     AgentRunRequest,
     AgentRunResult,
     AgentStepRecord,
@@ -63,7 +63,6 @@ async def run_agent(
     prompt_capsule_path = request.capsule_path
     resolved_manifest = request.capsule_manifest or "(manifest unavailable)"
     steps: list[AgentStepRecord] = []
-    latest_candidate_answer: str | None = None
     system_prompt = build_system_prompt(request.max_iterations)
 
     for iteration in range(1, request.max_iterations + 1):
@@ -90,7 +89,7 @@ async def run_agent(
             decision = await parse_structured(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                response_model=AgentDecision,
+                response_model=AgentIterationResponse,
                 trace_writer=trace_writer,
                 trace_stage="agent",
             )
@@ -108,7 +107,7 @@ async def run_agent(
                 decision = await parse_structured(
                     system_prompt=system_prompt,
                     user_prompt=repair_prompt,
-                    response_model=AgentDecision,
+                    response_model=AgentIterationResponse,
                     trace_writer=trace_writer,
                     trace_stage="agent",
                 )
@@ -148,122 +147,86 @@ async def run_agent(
             event="agent_decision",
             payload={
                 "iteration": iteration,
-                "decision": decision.decision,
+                "has_python": bool(
+                    decision.python_code and decision.python_code.strip()
+                ),
+                "has_final_answer": decision.final_answer is not None,
             },
         )
-
-        if decision.decision == "run_python":
-            run_id = _build_execution_run_id(execution_id, iteration)
-            execution_result = await run_python(
-                decision.script or "",
-                timeout_seconds=DEFAULT_PYTHON_TIMEOUT_SECONDS,
-                run_id=run_id,
-            )
-            steps.append(
-                AgentStepRecord(
-                    iteration=iteration,
-                    decision=decision.decision,
-                    script=decision.script,
-                    execution_status=execution_result.status,
-                    execution_error=execution_result.error_message,
-                    execution_answer=execution_result.answer,
-                    execution_stdout_tail=execution_result.stdout_tail,
-                    execution_stderr_tail=execution_result.stderr_tail,
-                    execution_duration_ms=execution_result.duration_ms,
-                    execution_worker=execution_result.worker,
-                )
-            )
-            _write_trace_event(
-                trace_writer=trace_writer,
-                event="agent_execution_result",
-                payload={
-                    "iteration": iteration,
-                    "execution_id": execution_id,
-                    "run_id": run_id,
-                    "status": execution_result.status,
-                    "error": execution_result.error_message,
-                    "duration_ms": execution_result.duration_ms,
-                    "worker": execution_result.worker,
-                    "stdout_tail": execution_result.stdout_tail[:240],
-                    "stderr_tail": execution_result.stderr_tail[:240],
-                    "answer": execution_result.answer[:200]
-                    if execution_result.answer
-                    else None,
-                },
-            )
-            continue
-
-        if decision.decision == "respond":
-            latest_candidate_answer = decision.answer
-            steps.append(
-                AgentStepRecord(
-                    iteration=iteration,
-                    decision=decision.decision,
-                    answer=decision.answer,
-                )
-            )
-            _write_trace_event(
-                trace_writer=trace_writer,
-                event="agent_execution_result",
-                payload={
-                    "iteration": iteration,
-                    "status": "responded",
-                    "answer_preview": (decision.answer or "")[:200],
-                },
-            )
-            continue
-
-        steps.append(
-            AgentStepRecord(
+        if decision.final_answer is not None:
+            final_answer = _stringify_final_answer(decision.final_answer)
+            step = AgentStepRecord(
                 iteration=iteration,
-                decision=decision.decision,
-                reason=decision.reason,
+                script=decision.python_code or "",
+                proposed_final_answer=final_answer,
             )
+            steps.append(step)
+            _write_trace_event(
+                trace_writer=trace_writer,
+                event="agent_terminated",
+                payload={
+                    "iteration": iteration,
+                    "reason": "completed",
+                    "answer_preview": final_answer[:200] if final_answer else None,
+                },
+            )
+            return AgentRunResult(
+                status="completed",
+                answer=final_answer,
+                iterations_used=iteration,
+                steps=steps,
+                failure_reason=None,
+                failure_detail=None,
+            )
+
+        run_id = _build_execution_run_id(execution_id, iteration)
+        execution_result = await run_python(
+            decision.python_code or "",
+            timeout_seconds=DEFAULT_PYTHON_TIMEOUT_SECONDS,
+            run_id=run_id,
         )
+        step = AgentStepRecord(
+            iteration=iteration,
+            script=decision.python_code or "",
+            proposed_final_answer=_stringify_final_answer(decision.final_answer),
+            execution_status=execution_result.status,
+            execution_error=execution_result.error_message,
+            execution_answer=execution_result.answer,
+            execution_stdout_tail=execution_result.stdout_tail,
+            execution_stderr_tail=execution_result.stderr_tail,
+            execution_duration_ms=execution_result.duration_ms,
+            execution_worker=execution_result.worker,
+        )
+        steps.append(step)
         _write_trace_event(
             trace_writer=trace_writer,
-            event="agent_terminated",
+            event="agent_execution_result",
             payload={
                 "iteration": iteration,
-                "reason": "need_info",
-                "detail": decision.reason,
+                "execution_id": execution_id,
+                "run_id": run_id,
+                "status": execution_result.status,
+                "error": execution_result.error_message,
+                "duration_ms": execution_result.duration_ms,
+                "worker": execution_result.worker,
+                "stdout_tail": execution_result.stdout_tail[:240],
+                "stderr_tail": execution_result.stderr_tail[:240],
+                "answer": execution_result.answer[:200]
+                if execution_result.answer
+                else None,
             },
-        )
-        return AgentRunResult(
-            status="failed",
-            iterations_used=iteration,
-            steps=steps,
-            failure_reason="need_info",
-            failure_detail=decision.reason,
-        )
-
-    if latest_candidate_answer is not None:
-        _write_trace_event(
-            trace_writer=trace_writer,
-            event="agent_terminated",
-            payload={
-                "iteration": request.max_iterations,
-                "reason": "completed",
-                "answer_preview": latest_candidate_answer[:200],
-            },
-        )
-        return AgentRunResult(
-            status="completed",
-            answer=latest_candidate_answer,
-            iterations_used=request.max_iterations,
-            steps=steps,
-            failure_reason=None,
-            failure_detail=None,
         )
 
     last_step = steps[-1] if steps else None
     no_answer_detail = (
-        f"last_decision={last_step.decision}; "
+        f"last_had_python={bool(last_step.script.strip())}; "
         f"last_execution_status={last_step.execution_status}; "
-        f"had_candidate_answer={latest_candidate_answer is not None}"
+        f"had_candidate_answer={last_step.proposed_final_answer is not None}"
         if last_step is not None
         else (
-            "last_decision=None; last_execution_status=None; had_candidate_answer=False"
+            "last_had_python=None; "
+            "last_execution_status=None; "
+            "had_candidate_answer=False"
         )
     )
     _write_trace_event(
@@ -331,3 +294,12 @@ def _write_trace_event(
     if trace_writer is None:
         return
     trace_writer.write_event(event=event, stage="agent", payload=payload)
+
+
+def _stringify_final_answer(value: object | None) -> str | None:
+    """Convert any model-emitted final answer value into string form."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return str(value)
